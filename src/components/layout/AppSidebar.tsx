@@ -55,7 +55,7 @@ export function AppSidebar() {
           {!isCollapsed && (
             <div className="flex flex-col">
               <span className="font-display font-semibold text-sidebar-foreground">
-                DairyFlow
+                Anoop Dairy
               </span>
               <span className="text-xs text-sidebar-foreground/60">
                 Farm Management
