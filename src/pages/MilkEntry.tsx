@@ -26,6 +26,7 @@ interface Customer {
   daily_quantity: number;
   rate_per_liter: number;
   is_active: boolean;
+  delivery_session: "morning" | "evening" | "both";
 }
 
 interface MilkEntry {
@@ -72,8 +73,18 @@ export default function MilkEntry() {
     const activeCustomers = customersData || [];
     setCustomers(activeCustomers);
 
+    // Filter customers for morning session (morning + both)
+    const morningCustomers = activeCustomers.filter(c => 
+      c.delivery_session === "morning" || c.delivery_session === "both"
+    );
+
+    // Filter customers for evening session (evening + both)
+    const eveningCustomers = activeCustomers.filter(c => 
+      c.delivery_session === "evening" || c.delivery_session === "both"
+    );
+
     // Create morning entries
-    const morning: MilkEntry[] = activeCustomers.map(c => {
+    const morning: MilkEntry[] = morningCustomers.map(c => {
       const existing = entriesData?.find(e => e.customer_id === c.id && e.session === "morning");
       return {
         id: existing?.id,
@@ -88,7 +99,7 @@ export default function MilkEntry() {
     });
 
     // Create evening entries
-    const evening: MilkEntry[] = activeCustomers.map(c => {
+    const evening: MilkEntry[] = eveningCustomers.map(c => {
       const existing = entriesData?.find(e => e.customer_id === c.id && e.session === "evening");
       return {
         id: existing?.id,
@@ -257,7 +268,7 @@ export default function MilkEntry() {
               </div>
               <div>
                 <p className="text-2xl font-display font-bold">{totalMorning.toFixed(1)} L</p>
-                <p className="text-sm text-muted-foreground">Morning</p>
+                <p className="text-sm text-muted-foreground">Morning ({morningEntries.length})</p>
               </div>
             </div>
           </CardContent>
@@ -270,7 +281,7 @@ export default function MilkEntry() {
               </div>
               <div>
                 <p className="text-2xl font-display font-bold">{totalEvening.toFixed(1)} L</p>
-                <p className="text-sm text-muted-foreground">Evening</p>
+                <p className="text-sm text-muted-foreground">Evening ({eveningEntries.length})</p>
               </div>
             </div>
           </CardContent>
@@ -360,7 +371,9 @@ function MilkEntryTable({ entries, session, onExtraChange, onToggleDelivery }: M
   if (entries.length === 0) {
     return (
       <Card className="p-8 text-center">
-        <p className="text-muted-foreground">No active customers. Add customers first.</p>
+        <p className="text-muted-foreground">
+          No customers assigned to {session} session. Add customers with {session} delivery preference.
+        </p>
       </Card>
     );
   }
