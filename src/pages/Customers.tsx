@@ -10,7 +10,10 @@ import {
   MapPin,
   Milk,
   Users,
-  Loader2
+  Loader2,
+  Sun,
+  Moon,
+  Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +55,7 @@ interface Customer {
   daily_quantity: number;
   rate_per_liter: number;
   is_active: boolean;
+  delivery_session: "morning" | "evening" | "both";
   created_at: string;
 }
 
@@ -60,6 +64,7 @@ export default function Customers() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
+  const [filterSession, setFilterSession] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -72,6 +77,7 @@ export default function Customers() {
     daily_quantity: 1,
     rate_per_liter: 60,
     is_active: true,
+    delivery_session: "both" as "morning" | "evening" | "both",
   });
 
   useEffect(() => {
@@ -98,7 +104,8 @@ export default function Customers() {
     const matchesSearch = customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          (customer.phone && customer.phone.includes(searchQuery));
     const matchesType = filterType === "all" || customer.milk_type === filterType;
-    return matchesSearch && matchesType;
+    const matchesSession = filterSession === "all" || customer.delivery_session === filterSession || customer.delivery_session === "both";
+    return matchesSearch && matchesType && matchesSession;
   });
 
   const handleOpenDialog = (customer?: Customer) => {
@@ -112,6 +119,7 @@ export default function Customers() {
         daily_quantity: customer.daily_quantity,
         rate_per_liter: customer.rate_per_liter,
         is_active: customer.is_active,
+        delivery_session: customer.delivery_session || "both",
       });
     } else {
       setEditingCustomer(null);
@@ -123,6 +131,7 @@ export default function Customers() {
         daily_quantity: 1,
         rate_per_liter: 60,
         is_active: true,
+        delivery_session: "both",
       });
     }
     setIsDialogOpen(true);
@@ -199,6 +208,26 @@ export default function Customers() {
   const totalActive = customers.filter(c => c.is_active).length;
   const totalCow = customers.filter(c => c.milk_type === "cow").length;
   const totalBuffalo = customers.filter(c => c.milk_type === "buffalo").length;
+  const totalMorning = customers.filter(c => c.delivery_session === "morning" || c.delivery_session === "both").length;
+  const totalEvening = customers.filter(c => c.delivery_session === "evening" || c.delivery_session === "both").length;
+
+  const getSessionIcon = (session: string) => {
+    switch (session) {
+      case "morning": return <Sun className="w-4 h-4" />;
+      case "evening": return <Moon className="w-4 h-4" />;
+      case "both": return <Clock className="w-4 h-4" />;
+      default: return <Clock className="w-4 h-4" />;
+    }
+  };
+
+  const getSessionLabel = (session: string) => {
+    switch (session) {
+      case "morning": return "Morning";
+      case "evening": return "Evening";
+      case "both": return "Both";
+      default: return "Both";
+    }
+  };
 
   if (isLoading) {
     return (
@@ -279,6 +308,26 @@ export default function Customers() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
+                  <Label>Delivery Session</Label>
+                  <Select
+                    value={formData.delivery_session}
+                    onValueChange={(value: "morning" | "evening" | "both") => 
+                      setFormData({ ...formData, delivery_session: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="morning">Morning Only</SelectItem>
+                      <SelectItem value="evening">Evening Only</SelectItem>
+                      <SelectItem value="both">Both Sessions</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
                   <Label htmlFor="quantity">Daily Quantity (L)</Label>
                   <Input
                     id="quantity"
@@ -288,8 +337,6 @@ export default function Customers() {
                     onChange={(e) => setFormData({ ...formData, daily_quantity: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="rate">Rate per Liter (₹)</Label>
                   <Input
@@ -299,15 +346,15 @@ export default function Customers() {
                     onChange={(e) => setFormData({ ...formData, rate_per_liter: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label>Status</Label>
-                  <div className="flex items-center gap-2 h-10">
-                    <Switch
-                      checked={formData.is_active}
-                      onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                    />
-                    <span className="text-sm">{formData.is_active ? "Active" : "Inactive"}</span>
-                  </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Status</Label>
+                <div className="flex items-center gap-2 h-10">
+                  <Switch
+                    checked={formData.is_active}
+                    onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                  />
+                  <span className="text-sm">{formData.is_active ? "Active" : "Inactive"}</span>
                 </div>
               </div>
             </div>
@@ -322,7 +369,7 @@ export default function Customers() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card className="stat-card">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -331,7 +378,7 @@ export default function Customers() {
               </div>
               <div>
                 <p className="text-2xl font-display font-bold">{customers.length}</p>
-                <p className="text-sm text-muted-foreground">Total Customers</p>
+                <p className="text-sm text-muted-foreground">Total</p>
               </div>
             </div>
           </CardContent>
@@ -344,7 +391,33 @@ export default function Customers() {
               </div>
               <div>
                 <p className="text-2xl font-display font-bold">{totalActive}</p>
-                <p className="text-sm text-muted-foreground">Active Customers</p>
+                <p className="text-sm text-muted-foreground">Active</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="stat-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="stat-card-icon bg-warning/10">
+                <Sun className="w-5 h-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-2xl font-display font-bold">{totalMorning}</p>
+                <p className="text-sm text-muted-foreground">Morning</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="stat-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="stat-card-icon bg-info/10">
+                <Moon className="w-5 h-5 text-info" />
+              </div>
+              <div>
+                <p className="text-2xl font-display font-bold">{totalEvening}</p>
+                <p className="text-sm text-muted-foreground">Evening</p>
               </div>
             </div>
           </CardContent>
@@ -356,21 +429,8 @@ export default function Customers() {
                 <Milk className="w-5 h-5 text-cow" />
               </div>
               <div>
-                <p className="text-2xl font-display font-bold">{totalCow}</p>
-                <p className="text-sm text-muted-foreground">Cow Milk</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="stat-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="stat-card-icon bg-buffalo/10">
-                <Milk className="w-5 h-5 text-buffalo" />
-              </div>
-              <div>
-                <p className="text-2xl font-display font-bold">{totalBuffalo}</p>
-                <p className="text-sm text-muted-foreground">Buffalo Milk</p>
+                <p className="text-2xl font-display font-bold">{totalCow}/{totalBuffalo}</p>
+                <p className="text-sm text-muted-foreground">Cow/Buffalo</p>
               </div>
             </div>
           </CardContent>
@@ -388,6 +448,18 @@ export default function Customers() {
             className="pl-9"
           />
         </div>
+        <Select value={filterSession} onValueChange={setFilterSession}>
+          <SelectTrigger className="w-[180px]">
+            <Clock className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="Filter by session" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sessions</SelectItem>
+            <SelectItem value="morning">Morning Only</SelectItem>
+            <SelectItem value="evening">Evening Only</SelectItem>
+            <SelectItem value="both">Both Sessions</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={filterType} onValueChange={setFilterType}>
           <SelectTrigger className="w-[180px]">
             <Filter className="w-4 h-4 mr-2" />
@@ -415,7 +487,7 @@ export default function Customers() {
                   </div>
                   <div>
                     <h3 className="font-semibold">{customer.name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <Badge 
                         variant="secondary"
                         className={customer.milk_type === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
@@ -427,6 +499,10 @@ export default function Customers() {
                         className={customer.is_active ? "status-paid" : "status-unpaid"}
                       >
                         {customer.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                      <Badge variant="outline" className="flex items-center gap-1">
+                        {getSessionIcon(customer.delivery_session)}
+                        {getSessionLabel(customer.delivery_session)}
                       </Badge>
                     </div>
                   </div>
