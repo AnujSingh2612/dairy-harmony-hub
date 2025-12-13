@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Calendar,
   Sun,
@@ -7,80 +7,206 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Milk
+  Milk,
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format, addDays, subDays } from "date-fns";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
-interface MilkEntry {
-  customerId: number;
-  customerName: string;
-  milkType: "cow" | "buffalo";
-  regularQuantity: number;
-  extraQuantity: number;
-  ratePerLiter: number;
-  morningDelivered: boolean;
-  eveningDelivered: boolean;
+interface Customer {
+  id: string;
+  name: string;
+  milk_type: "cow" | "buffalo";
+  daily_quantity: number;
+  rate_per_liter: number;
+  is_active: boolean;
 }
 
-const mockEntries: MilkEntry[] = [
-  { customerId: 1, customerName: "Ramesh Kumar", milkType: "cow", regularQuantity: 5, extraQuantity: 0, ratePerLiter: 60, morningDelivered: true, eveningDelivered: false },
-  { customerId: 2, customerName: "Suresh Patel", milkType: "buffalo", regularQuantity: 8, extraQuantity: 2, ratePerLiter: 80, morningDelivered: true, eveningDelivered: true },
-  { customerId: 3, customerName: "Priya Sharma", milkType: "cow", regularQuantity: 3, extraQuantity: 0, ratePerLiter: 60, morningDelivered: true, eveningDelivered: false },
-  { customerId: 4, customerName: "Amit Singh", milkType: "buffalo", regularQuantity: 6, extraQuantity: 1, ratePerLiter: 80, morningDelivered: false, eveningDelivered: false },
-  { customerId: 5, customerName: "Meera Devi", milkType: "cow", regularQuantity: 4, extraQuantity: 0, ratePerLiter: 60, morningDelivered: true, eveningDelivered: true },
-  { customerId: 6, customerName: "Vikram Yadav", milkType: "buffalo", regularQuantity: 10, extraQuantity: 3, ratePerLiter: 85, morningDelivered: true, eveningDelivered: false },
-];
+interface MilkEntry {
+  id?: string;
+  customer_id: string;
+  customer_name: string;
+  milk_type: "cow" | "buffalo";
+  regular_quantity: number;
+  extra_quantity: number;
+  rate_per_liter: number;
+  delivered: boolean;
+}
 
 export default function MilkEntry() {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [entries, setEntries] = useState<MilkEntry[]>(mockEntries);
+  const [isLoading, setIsLoading] = useState(true);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [morningEntries, setMorningEntries] = useState<MilkEntry[]>([]);
+  const [eveningEntries, setEveningEntries] = useState<MilkEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [session, setSession] = useState<"morning" | "evening">("morning");
 
-  const filteredEntries = entries.filter((entry) =>
-    entry.customerName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    fetchData();
+  }, [selectedDate]);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
+
+    // Fetch active customers
+    const { data: customersData } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("is_active", true)
+      .order("name");
+
+    // Fetch existing entries for the date
+    const { data: entriesData } = await supabase
+      .from("milk_entries")
+      .select("*")
+      .eq("date", dateStr);
+
+    const activeCustomers = customersData || [];
+    setCustomers(activeCustomers);
+
+    // Create morning entries
+    const morning: MilkEntry[] = activeCustomers.map(c => {
+      const existing = entriesData?.find(e => e.customer_id === c.id && e.session === "morning");
+      return {
+        id: existing?.id,
+        customer_id: c.id,
+        customer_name: c.name,
+        milk_type: c.milk_type,
+        regular_quantity: existing ? Number(existing.regular_quantity) : c.daily_quantity / 2,
+        extra_quantity: existing ? Number(existing.extra_quantity || 0) : 0,
+        rate_per_liter: existing ? Number(existing.rate_per_liter) : c.rate_per_liter,
+        delivered: existing ? existing.delivered : false,
+      };
+    });
+
+    // Create evening entries
+    const evening: MilkEntry[] = activeCustomers.map(c => {
+      const existing = entriesData?.find(e => e.customer_id === c.id && e.session === "evening");
+      return {
+        id: existing?.id,
+        customer_id: c.id,
+        customer_name: c.name,
+        milk_type: c.milk_type,
+        regular_quantity: existing ? Number(existing.regular_quantity) : c.daily_quantity / 2,
+        extra_quantity: existing ? Number(existing.extra_quantity || 0) : 0,
+        rate_per_liter: existing ? Number(existing.rate_per_liter) : c.rate_per_liter,
+        delivered: existing ? existing.delivered : false,
+      };
+    });
+
+    setMorningEntries(morning);
+    setEveningEntries(evening);
+    setIsLoading(false);
+  };
 
   const handlePrevDay = () => setSelectedDate(subDays(selectedDate, 1));
   const handleNextDay = () => setSelectedDate(addDays(selectedDate, 1));
   const handleToday = () => setSelectedDate(new Date());
 
-  const handleExtraQuantityChange = (customerId: number, value: number) => {
+  const handleExtraQuantityChange = async (customerId: string, sessionType: "morning" | "evening", value: number) => {
+    const entries = sessionType === "morning" ? morningEntries : eveningEntries;
+    const setEntries = sessionType === "morning" ? setMorningEntries : setEveningEntries;
+    
     setEntries(entries.map(entry =>
-      entry.customerId === customerId
-        ? { ...entry, extraQuantity: Math.max(0, value) }
+      entry.customer_id === customerId
+        ? { ...entry, extra_quantity: Math.max(0, value) }
         : entry
     ));
   };
 
-  const handleToggleDelivery = (customerId: number, sessionType: "morning" | "evening") => {
-    setEntries(entries.map(entry =>
-      entry.customerId === customerId
-        ? {
-            ...entry,
-            [sessionType === "morning" ? "morningDelivered" : "eveningDelivered"]: 
-              !entry[sessionType === "morning" ? "morningDelivered" : "eveningDelivered"]
-          }
-        : entry
-    ));
+  const handleToggleDelivery = async (customerId: string, sessionType: "morning" | "evening") => {
+    const entries = sessionType === "morning" ? morningEntries : eveningEntries;
+    const setEntries = sessionType === "morning" ? setMorningEntries : setEveningEntries;
+    const entry = entries.find(e => e.customer_id === customerId);
+    
+    if (!entry) return;
+
+    const newDelivered = !entry.delivered;
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
+
+    try {
+      if (entry.id) {
+        // Update existing entry
+        await supabase
+          .from("milk_entries")
+          .update({ 
+            delivered: newDelivered,
+            extra_quantity: entry.extra_quantity 
+          })
+          .eq("id", entry.id);
+      } else {
+        // Create new entry
+        const { data } = await supabase
+          .from("milk_entries")
+          .insert([{
+            customer_id: customerId,
+            date: dateStr,
+            session: sessionType,
+            regular_quantity: entry.regular_quantity,
+            extra_quantity: entry.extra_quantity,
+            rate_per_liter: entry.rate_per_liter,
+            delivered: newDelivered,
+          }])
+          .select()
+          .single();
+
+        if (data) {
+          setEntries(entries.map(e =>
+            e.customer_id === customerId
+              ? { ...e, id: data.id, delivered: newDelivered }
+              : e
+          ));
+          return;
+        }
+      }
+
+      setEntries(entries.map(e =>
+        e.customer_id === customerId
+          ? { ...e, delivered: newDelivered }
+          : e
+      ));
+    } catch (error) {
+      console.error("Error saving entry:", error);
+      toast.error("Failed to save entry");
+    }
   };
 
-  const totalMorning = entries.reduce((sum, e) => 
-    sum + (e.morningDelivered ? (e.regularQuantity / 2 + e.extraQuantity / 2) : 0), 0
+  const filteredMorningEntries = morningEntries.filter(e =>
+    e.customer_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const totalEvening = entries.reduce((sum, e) => 
-    sum + (e.eveningDelivered ? (e.regularQuantity / 2 + e.extraQuantity / 2) : 0), 0
+
+  const filteredEveningEntries = eveningEntries.filter(e =>
+    e.customer_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const totalMorning = morningEntries.reduce((sum, e) => 
+    sum + (e.delivered ? (e.regular_quantity + e.extra_quantity) : 0), 0
+  );
+  const totalEvening = eveningEntries.reduce((sum, e) => 
+    sum + (e.delivered ? (e.regular_quantity + e.extra_quantity) : 0), 0
   );
   const totalLiters = totalMorning + totalEvening;
-  const totalAmount = entries.reduce((sum, e) => {
-    const delivered = (e.morningDelivered ? 0.5 : 0) + (e.eveningDelivered ? 0.5 : 0);
-    return sum + ((e.regularQuantity + e.extraQuantity) * e.ratePerLiter * delivered);
-  }, 0);
+  
+  const totalAmount = [
+    ...morningEntries.filter(e => e.delivered),
+    ...eveningEntries.filter(e => e.delivered)
+  ].reduce((sum, e) => sum + ((e.regular_quantity + e.extra_quantity) * e.rate_per_liter), 0);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -183,11 +309,11 @@ export default function MilkEntry() {
           <TabsList className="grid w-full md:w-auto grid-cols-2">
             <TabsTrigger value="morning" className="gap-2">
               <Sun className="w-4 h-4" />
-              Morning
+              Morning ({morningEntries.filter(e => e.delivered).length}/{morningEntries.length})
             </TabsTrigger>
             <TabsTrigger value="evening" className="gap-2">
               <Moon className="w-4 h-4" />
-              Evening
+              Evening ({eveningEntries.filter(e => e.delivered).length}/{eveningEntries.length})
             </TabsTrigger>
           </TabsList>
           
@@ -204,18 +330,18 @@ export default function MilkEntry() {
 
         <TabsContent value="morning" className="mt-0">
           <MilkEntryTable 
-            entries={filteredEntries}
+            entries={filteredMorningEntries}
             session="morning"
-            onExtraChange={handleExtraQuantityChange}
-            onToggleDelivery={handleToggleDelivery}
+            onExtraChange={(id, val) => handleExtraQuantityChange(id, "morning", val)}
+            onToggleDelivery={(id) => handleToggleDelivery(id, "morning")}
           />
         </TabsContent>
         <TabsContent value="evening" className="mt-0">
           <MilkEntryTable 
-            entries={filteredEntries}
+            entries={filteredEveningEntries}
             session="evening"
-            onExtraChange={handleExtraQuantityChange}
-            onToggleDelivery={handleToggleDelivery}
+            onExtraChange={(id, val) => handleExtraQuantityChange(id, "evening", val)}
+            onToggleDelivery={(id) => handleToggleDelivery(id, "evening")}
           />
         </TabsContent>
       </Tabs>
@@ -226,11 +352,19 @@ export default function MilkEntry() {
 interface MilkEntryTableProps {
   entries: MilkEntry[];
   session: "morning" | "evening";
-  onExtraChange: (customerId: number, value: number) => void;
-  onToggleDelivery: (customerId: number, session: "morning" | "evening") => void;
+  onExtraChange: (customerId: string, value: number) => void;
+  onToggleDelivery: (customerId: string) => void;
 }
 
 function MilkEntryTable({ entries, session, onExtraChange, onToggleDelivery }: MilkEntryTableProps) {
+  if (entries.length === 0) {
+    return (
+      <Card className="p-8 text-center">
+        <p className="text-muted-foreground">No active customers. Add customers first.</p>
+      </Card>
+    );
+  }
+
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -249,53 +383,52 @@ function MilkEntryTable({ entries, session, onExtraChange, onToggleDelivery }: M
           </thead>
           <tbody>
             {entries.map((entry) => {
-              const isDelivered = session === "morning" ? entry.morningDelivered : entry.eveningDelivered;
-              const sessionQty = (entry.regularQuantity + entry.extraQuantity) / 2;
-              const sessionAmount = sessionQty * entry.ratePerLiter;
+              const totalQty = entry.regular_quantity + entry.extra_quantity;
+              const amount = totalQty * entry.rate_per_liter;
               
               return (
-                <tr key={entry.customerId}>
+                <tr key={entry.customer_id}>
                   <td>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                         <span className="text-sm font-medium text-primary">
-                          {entry.customerName.charAt(0)}
+                          {entry.customer_name.charAt(0)}
                         </span>
                       </div>
-                      <span className="font-medium">{entry.customerName}</span>
+                      <span className="font-medium">{entry.customer_name}</span>
                     </div>
                   </td>
                   <td>
                     <Badge 
                       variant="secondary"
-                      className={entry.milkType === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
+                      className={entry.milk_type === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
                     >
-                      {entry.milkType}
+                      {entry.milk_type}
                     </Badge>
                   </td>
-                  <td className="font-medium">{(entry.regularQuantity / 2).toFixed(1)}</td>
+                  <td className="font-medium">{entry.regular_quantity.toFixed(1)}</td>
                   <td>
                     <Input
                       type="number"
                       min="0"
                       step="0.5"
-                      value={entry.extraQuantity / 2}
-                      onChange={(e) => onExtraChange(entry.customerId, parseFloat(e.target.value) * 2 || 0)}
+                      value={entry.extra_quantity}
+                      onChange={(e) => onExtraChange(entry.customer_id, parseFloat(e.target.value) || 0)}
                       className="w-20 h-8"
                     />
                   </td>
-                  <td className="font-semibold">{sessionQty.toFixed(1)}</td>
-                  <td>₹{entry.ratePerLiter}/L</td>
-                  <td className="font-semibold text-primary">₹{sessionAmount.toFixed(0)}</td>
+                  <td className="font-semibold">{totalQty.toFixed(1)}</td>
+                  <td>₹{entry.rate_per_liter}/L</td>
+                  <td className="font-semibold text-primary">₹{amount.toFixed(0)}</td>
                   <td>
                     <Button
-                      variant={isDelivered ? "default" : "outline"}
+                      variant={entry.delivered ? "default" : "outline"}
                       size="sm"
-                      onClick={() => onToggleDelivery(entry.customerId, session)}
-                      className={isDelivered ? "bg-success hover:bg-success/90" : ""}
+                      onClick={() => onToggleDelivery(entry.customer_id)}
+                      className={entry.delivered ? "bg-success hover:bg-success/90" : ""}
                     >
-                      <Check className={`w-4 h-4 ${isDelivered ? "" : "mr-2"}`} />
-                      {!isDelivered && "Mark"}
+                      <Check className={`w-4 h-4 ${entry.delivered ? "" : "mr-2"}`} />
+                      {!entry.delivered && "Mark"}
                     </Button>
                   </td>
                 </tr>

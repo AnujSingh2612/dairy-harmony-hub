@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { 
   Users, 
   Milk, 
@@ -6,11 +7,12 @@ import {
   TrendingDown,
   Calendar,
   FileText,
-  AlertCircle
+  Loader2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 import {
   AreaChart,
   Area,
@@ -19,80 +21,143 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
 } from "recharts";
+import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
 
-const stats = [
-  {
-    title: "Total Customers",
-    value: "156",
-    change: "+12",
-    changeType: "positive",
-    icon: Users,
-    iconBg: "bg-primary/10",
-    iconColor: "text-primary",
-  },
-  {
-    title: "Today's Milk",
-    value: "485 L",
-    subtitle: "Morning: 280L | Evening: 205L",
-    icon: Milk,
-    iconBg: "bg-info/10",
-    iconColor: "text-info",
-  },
-  {
-    title: "Monthly Revenue",
-    value: "₹2,45,680",
-    change: "+8.2%",
-    changeType: "positive",
-    icon: IndianRupee,
-    iconBg: "bg-success/10",
-    iconColor: "text-success",
-  },
-  {
-    title: "Unpaid Bills",
-    value: "23",
-    amount: "₹45,200",
-    changeType: "warning",
-    icon: FileText,
-    iconBg: "bg-warning/10",
-    iconColor: "text-warning",
-  },
-];
-
-const revenueData = [
-  { month: "Jan", revenue: 180000, expenses: 45000 },
-  { month: "Feb", revenue: 195000, expenses: 48000 },
-  { month: "Mar", revenue: 210000, expenses: 52000 },
-  { month: "Apr", revenue: 225000, expenses: 55000 },
-  { month: "May", revenue: 238000, expenses: 58000 },
-  { month: "Jun", revenue: 245680, expenses: 62000 },
-];
-
-const milkDistribution = [
-  { name: "Cow Milk", value: 320, color: "hsl(35, 60%, 55%)" },
-  { name: "Buffalo Milk", value: 165, color: "hsl(200, 40%, 45%)" },
-];
-
-const recentCustomers = [
-  { id: 1, name: "Ramesh Kumar", type: "cow", quantity: "5L", status: "active" },
-  { id: 2, name: "Suresh Patel", type: "buffalo", quantity: "8L", status: "active" },
-  { id: 3, name: "Priya Sharma", type: "cow", quantity: "3L", status: "active" },
-  { id: 4, name: "Amit Singh", type: "buffalo", quantity: "6L", status: "inactive" },
-];
-
-const recentBills = [
-  { id: "INV-001", customer: "Ramesh Kumar", amount: "₹4,500", status: "paid" },
-  { id: "INV-002", customer: "Suresh Patel", amount: "₹7,200", status: "unpaid" },
-  { id: "INV-003", customer: "Priya Sharma", amount: "₹2,850", status: "paid" },
-  { id: "INV-004", customer: "Amit Singh", amount: "₹5,400", status: "unpaid" },
-];
+interface DashboardStats {
+  totalCustomers: number;
+  activeCustomers: number;
+  todayMorningMilk: number;
+  todayEveningMilk: number;
+  monthlyRevenue: number;
+  unpaidBillsCount: number;
+  unpaidBillsAmount: number;
+  cowMilkToday: number;
+  buffaloMilkToday: number;
+}
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalCustomers: 0,
+    activeCustomers: 0,
+    todayMorningMilk: 0,
+    todayEveningMilk: 0,
+    monthlyRevenue: 0,
+    unpaidBillsCount: 0,
+    unpaidBillsAmount: 0,
+    cowMilkToday: 0,
+    buffaloMilkToday: 0,
+  });
+  const [recentCustomers, setRecentCustomers] = useState<any[]>([]);
+  const [recentBills, setRecentBills] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    setIsLoading(true);
+    try {
+      const today = format(new Date(), "yyyy-MM-dd");
+      const currentMonth = new Date().getMonth() + 1;
+      const currentYear = new Date().getFullYear();
+
+      // Fetch customers
+      const { data: customers } = await supabase
+        .from("customers")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      // Fetch today's milk entries
+      const { data: todayEntries } = await supabase
+        .from("milk_entries")
+        .select("*, customers(milk_type)")
+        .eq("date", today);
+
+      // Fetch unpaid bills
+      const { data: unpaidBills } = await supabase
+        .from("bills")
+        .select("*")
+        .eq("status", "unpaid");
+
+      // Fetch this month's bills for revenue
+      const { data: monthBills } = await supabase
+        .from("bills")
+        .select("*")
+        .eq("month", currentMonth)
+        .eq("year", currentYear);
+
+      // Fetch recent bills with customer info
+      const { data: bills } = await supabase
+        .from("bills")
+        .select("*, customers(name)")
+        .order("created_at", { ascending: false })
+        .limit(4);
+
+      // Calculate stats
+      const totalCustomers = customers?.length || 0;
+      const activeCustomers = customers?.filter(c => c.is_active).length || 0;
+      
+      const morningMilk = todayEntries
+        ?.filter(e => e.session === "morning" && e.delivered)
+        .reduce((sum, e) => sum + Number(e.regular_quantity) + Number(e.extra_quantity || 0), 0) || 0;
+      
+      const eveningMilk = todayEntries
+        ?.filter(e => e.session === "evening" && e.delivered)
+        .reduce((sum, e) => sum + Number(e.regular_quantity) + Number(e.extra_quantity || 0), 0) || 0;
+
+      const cowMilk = todayEntries
+        ?.filter(e => e.customers?.milk_type === "cow" && e.delivered)
+        .reduce((sum, e) => sum + Number(e.regular_quantity) + Number(e.extra_quantity || 0), 0) || 0;
+
+      const buffaloMilk = todayEntries
+        ?.filter(e => e.customers?.milk_type === "buffalo" && e.delivered)
+        .reduce((sum, e) => sum + Number(e.regular_quantity) + Number(e.extra_quantity || 0), 0) || 0;
+
+      const monthlyRevenue = monthBills?.reduce((sum, b) => sum + Number(b.final_amount), 0) || 0;
+      const unpaidCount = unpaidBills?.length || 0;
+      const unpaidAmount = unpaidBills?.reduce((sum, b) => sum + Number(b.final_amount), 0) || 0;
+
+      setStats({
+        totalCustomers,
+        activeCustomers,
+        todayMorningMilk: morningMilk,
+        todayEveningMilk: eveningMilk,
+        monthlyRevenue,
+        unpaidBillsCount: unpaidCount,
+        unpaidBillsAmount: unpaidAmount,
+        cowMilkToday: cowMilk,
+        buffaloMilkToday: buffaloMilk,
+      });
+
+      setRecentCustomers(customers?.slice(0, 4) || []);
+      setRecentBills(bills || []);
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const milkDistribution = [
+    { name: "Cow Milk", value: stats.cowMilkToday, color: "hsl(35, 60%, 55%)" },
+    { name: "Buffalo Milk", value: stats.buffaloMilkToday, color: "hsl(200, 40%, 45%)" },
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page Header */}
@@ -104,9 +169,9 @@ export default function Dashboard() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm">
             <Calendar className="w-4 h-4 mr-2" />
-            December 2024
+            {format(new Date(), "MMMM yyyy")}
           </Button>
-          <Button size="sm">
+          <Button size="sm" onClick={() => navigate("/milk-entry")}>
             <Milk className="w-4 h-4 mr-2" />
             Add Milk Entry
           </Button>
@@ -115,132 +180,114 @@ export default function Dashboard() {
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.title} className="stat-card">
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
-                  <p className="text-2xl font-display font-bold">{stat.value}</p>
-                  {stat.subtitle && (
-                    <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
-                  )}
-                  {stat.change && (
-                    <div className="flex items-center gap-1">
-                      {stat.changeType === "positive" ? (
-                        <TrendingUp className="w-3 h-3 text-success" />
-                      ) : (
-                        <TrendingDown className="w-3 h-3 text-destructive" />
-                      )}
-                      <span className={`text-xs font-medium ${
-                        stat.changeType === "positive" ? "text-success" : "text-destructive"
-                      }`}>
-                        {stat.change}
-                      </span>
-                      <span className="text-xs text-muted-foreground">vs last month</span>
-                    </div>
-                  )}
-                  {stat.amount && (
-                    <p className="text-sm font-medium text-warning">{stat.amount} pending</p>
-                  )}
-                </div>
-                <div className={`stat-card-icon ${stat.iconBg}`}>
-                  <stat.icon className={`w-5 h-5 ${stat.iconColor}`} />
-                </div>
+        <Card className="stat-card">
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Total Customers</p>
+                <p className="text-2xl font-display font-bold">{stats.totalCustomers}</p>
+                <p className="text-xs text-muted-foreground">{stats.activeCustomers} active</p>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Charts Row */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Revenue Chart */}
-        <Card className="lg:col-span-2 chart-container">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-display">Revenue vs Expenses</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenueData}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(142, 52%, 36%)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(142, 52%, 36%)" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v) => `₹${v/1000}k`} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: "hsl(var(--card))", 
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px"
-                    }}
-                    formatter={(value: number) => [`₹${value.toLocaleString()}`, ""]}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke="hsl(142, 52%, 36%)" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorRevenue)" 
-                    name="Revenue"
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="expenses" 
-                    stroke="hsl(0, 72%, 51%)" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorExpenses)" 
-                    name="Expenses"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <div className="stat-card-icon bg-primary/10">
+                <Users className="w-5 h-5 text-primary" />
+              </div>
             </div>
           </CardContent>
         </Card>
 
+        <Card className="stat-card">
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Today's Milk</p>
+                <p className="text-2xl font-display font-bold">
+                  {(stats.todayMorningMilk + stats.todayEveningMilk).toFixed(1)} L
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Morning: {stats.todayMorningMilk.toFixed(1)}L | Evening: {stats.todayEveningMilk.toFixed(1)}L
+                </p>
+              </div>
+              <div className="stat-card-icon bg-info/10">
+                <Milk className="w-5 h-5 text-info" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="stat-card">
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Monthly Revenue</p>
+                <p className="text-2xl font-display font-bold">₹{stats.monthlyRevenue.toLocaleString()}</p>
+                <div className="flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3 text-success" />
+                  <span className="text-xs text-success">This month</span>
+                </div>
+              </div>
+              <div className="stat-card-icon bg-success/10">
+                <IndianRupee className="w-5 h-5 text-success" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="stat-card">
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Unpaid Bills</p>
+                <p className="text-2xl font-display font-bold">{stats.unpaidBillsCount}</p>
+                <p className="text-sm font-medium text-warning">₹{stats.unpaidBillsAmount.toLocaleString()} pending</p>
+              </div>
+              <div className="stat-card-icon bg-warning/10">
+                <FileText className="w-5 h-5 text-warning" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid gap-6 lg:grid-cols-3">
         {/* Milk Distribution */}
-        <Card className="chart-container">
+        <Card className="chart-container lg:col-span-1">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-display">Milk Distribution</CardTitle>
+            <CardTitle className="text-lg font-display">Today's Milk Distribution</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={milkDistribution}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {milkDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: "hsl(var(--card))", 
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px"
-                    }}
-                    formatter={(value: number) => [`${value}L`, ""]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              {stats.cowMilkToday + stats.buffaloMilkToday > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={milkDistribution}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {milkDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: "hsl(var(--card))", 
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px"
+                      }}
+                      formatter={(value: number) => [`${value.toFixed(1)}L`, ""]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No milk entries today
+                </div>
+              )}
             </div>
             <div className="flex justify-center gap-6 mt-4">
               {milkDistribution.map((item) => (
@@ -250,56 +297,57 @@ export default function Dashboard() {
                     style={{ backgroundColor: item.color }}
                   />
                   <span className="text-sm text-muted-foreground">{item.name}</span>
-                  <span className="text-sm font-medium">{item.value}L</span>
+                  <span className="text-sm font-medium">{item.value.toFixed(1)}L</span>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      {/* Tables Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
         {/* Recent Customers */}
         <Card className="chart-container">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-lg font-display">Recent Customers</CardTitle>
-            <Button variant="ghost" size="sm">View All</Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/customers")}>View All</Button>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentCustomers.map((customer) => (
-                <div 
-                  key={customer.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-                      <span className="text-sm font-medium text-primary">
-                        {customer.name.charAt(0)}
-                      </span>
+              {recentCustomers.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4">No customers yet</p>
+              ) : (
+                recentCustomers.map((customer) => (
+                  <div 
+                    key={customer.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+                        <span className="text-sm font-medium text-primary">
+                          {customer.name.charAt(0)}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{customer.name}</p>
+                        <p className="text-xs text-muted-foreground">{customer.daily_quantity}L daily</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium">{customer.name}</p>
-                      <p className="text-xs text-muted-foreground">{customer.quantity} daily</p>
+                    <div className="flex items-center gap-2">
+                      <Badge 
+                        variant="secondary"
+                        className={customer.milk_type === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
+                      >
+                        {customer.milk_type}
+                      </Badge>
+                      <Badge 
+                        variant="outline"
+                        className={customer.is_active ? "status-paid" : "status-unpaid"}
+                      >
+                        {customer.is_active ? "active" : "inactive"}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge 
-                      variant="secondary"
-                      className={customer.type === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
-                    >
-                      {customer.type}
-                    </Badge>
-                    <Badge 
-                      variant="outline"
-                      className={customer.status === "active" ? "status-paid" : "status-unpaid"}
-                    >
-                      {customer.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -308,35 +356,39 @@ export default function Dashboard() {
         <Card className="chart-container">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-lg font-display">Recent Bills</CardTitle>
-            <Button variant="ghost" size="sm">View All</Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/bills")}>View All</Button>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentBills.map((bill) => (
-                <div 
-                  key={bill.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-muted-foreground" />
+              {recentBills.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4">No bills yet</p>
+              ) : (
+                recentBills.map((bill) => (
+                  <div 
+                    key={bill.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center">
+                        <FileText className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{bill.customers?.name}</p>
+                        <p className="text-xs text-muted-foreground">{bill.bill_number}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium">{bill.customer}</p>
-                      <p className="text-xs text-muted-foreground">{bill.id}</p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold">₹{Number(bill.final_amount).toLocaleString()}</span>
+                      <Badge 
+                        variant="outline"
+                        className={bill.status === "paid" ? "status-paid" : "status-unpaid"}
+                      >
+                        {bill.status}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold">{bill.amount}</span>
-                    <Badge 
-                      variant="outline"
-                      className={bill.status === "paid" ? "status-paid" : "status-unpaid"}
-                    >
-                      {bill.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>

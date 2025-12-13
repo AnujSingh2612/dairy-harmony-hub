@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Plus, 
   Search, 
@@ -8,12 +8,14 @@ import {
   Trash2, 
   Phone,
   MapPin,
-  Milk
+  Milk,
+  Users,
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -38,49 +40,64 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Customer {
-  id: number;
+  id: string;
   name: string;
-  phone: string;
-  address: string;
-  milkType: "cow" | "buffalo";
-  dailyQuantity: number;
-  ratePerLiter: number;
-  isActive: boolean;
-  joinedDate: string;
+  phone: string | null;
+  address: string | null;
+  milk_type: "cow" | "buffalo";
+  daily_quantity: number;
+  rate_per_liter: number;
+  is_active: boolean;
+  created_at: string;
 }
 
-const initialCustomers: Customer[] = [
-  { id: 1, name: "Ramesh Kumar", phone: "+91 98765 43210", address: "Village Road, Sector 5", milkType: "cow", dailyQuantity: 5, ratePerLiter: 60, isActive: true, joinedDate: "2024-01-15" },
-  { id: 2, name: "Suresh Patel", phone: "+91 98765 43211", address: "Main Street, Block A", milkType: "buffalo", dailyQuantity: 8, ratePerLiter: 80, isActive: true, joinedDate: "2024-02-20" },
-  { id: 3, name: "Priya Sharma", phone: "+91 98765 43212", address: "Green Avenue, Plot 12", milkType: "cow", dailyQuantity: 3, ratePerLiter: 60, isActive: true, joinedDate: "2024-03-10" },
-  { id: 4, name: "Amit Singh", phone: "+91 98765 43213", address: "Lake View Colony", milkType: "buffalo", dailyQuantity: 6, ratePerLiter: 80, isActive: false, joinedDate: "2024-01-05" },
-  { id: 5, name: "Meera Devi", phone: "+91 98765 43214", address: "Temple Road, Near School", milkType: "cow", dailyQuantity: 4, ratePerLiter: 60, isActive: true, joinedDate: "2024-04-01" },
-  { id: 6, name: "Vikram Yadav", phone: "+91 98765 43215", address: "Market Street, Shop 5", milkType: "buffalo", dailyQuantity: 10, ratePerLiter: 85, isActive: true, joinedDate: "2024-02-15" },
-];
-
 export default function Customers() {
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
     address: "",
-    milkType: "cow" as "cow" | "buffalo",
-    dailyQuantity: 0,
-    ratePerLiter: 60,
-    isActive: true,
+    milk_type: "cow" as "cow" | "buffalo",
+    daily_quantity: 1,
+    rate_per_liter: 60,
+    is_active: true,
   });
+
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
+
+  const fetchCustomers = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("customers")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      toast.error("Failed to fetch customers");
+      console.error(error);
+    } else {
+      setCustomers(data || []);
+    }
+    setIsLoading(false);
+  };
 
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch = customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         customer.phone.includes(searchQuery);
-    const matchesType = filterType === "all" || customer.milkType === filterType;
+                         (customer.phone && customer.phone.includes(searchQuery));
+    const matchesType = filterType === "all" || customer.milk_type === filterType;
     return matchesSearch && matchesType;
   });
 
@@ -89,12 +106,12 @@ export default function Customers() {
       setEditingCustomer(customer);
       setFormData({
         name: customer.name,
-        phone: customer.phone,
-        address: customer.address,
-        milkType: customer.milkType,
-        dailyQuantity: customer.dailyQuantity,
-        ratePerLiter: customer.ratePerLiter,
-        isActive: customer.isActive,
+        phone: customer.phone || "",
+        address: customer.address || "",
+        milk_type: customer.milk_type,
+        daily_quantity: customer.daily_quantity,
+        rate_per_liter: customer.rate_per_liter,
+        is_active: customer.is_active,
       });
     } else {
       setEditingCustomer(null);
@@ -102,46 +119,94 @@ export default function Customers() {
         name: "",
         phone: "",
         address: "",
-        milkType: "cow",
-        dailyQuantity: 0,
-        ratePerLiter: 60,
-        isActive: true,
+        milk_type: "cow",
+        daily_quantity: 1,
+        rate_per_liter: 60,
+        is_active: true,
       });
     }
     setIsDialogOpen(true);
   };
 
-  const handleSave = () => {
-    if (editingCustomer) {
-      setCustomers(customers.map(c => 
-        c.id === editingCustomer.id 
-          ? { ...c, ...formData }
-          : c
-      ));
-    } else {
-      const newCustomer: Customer = {
-        id: Math.max(...customers.map(c => c.id)) + 1,
-        ...formData,
-        joinedDate: new Date().toISOString().split('T')[0],
-      };
-      setCustomers([...customers, newCustomer]);
+  const handleSave = async () => {
+    if (!formData.name.trim()) {
+      toast.error("Customer name is required");
+      return;
     }
+
+    setIsSaving(true);
+    
+    if (editingCustomer) {
+      const { error } = await supabase
+        .from("customers")
+        .update(formData)
+        .eq("id", editingCustomer.id);
+
+      if (error) {
+        toast.error("Failed to update customer");
+        console.error(error);
+      } else {
+        toast.success("Customer updated successfully");
+        fetchCustomers();
+      }
+    } else {
+      const { error } = await supabase
+        .from("customers")
+        .insert([formData]);
+
+      if (error) {
+        toast.error("Failed to add customer");
+        console.error(error);
+      } else {
+        toast.success("Customer added successfully");
+        fetchCustomers();
+      }
+    }
+    
+    setIsSaving(false);
     setIsDialogOpen(false);
   };
 
-  const handleDelete = (id: number) => {
-    setCustomers(customers.filter(c => c.id !== id));
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase
+      .from("customers")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Failed to delete customer");
+      console.error(error);
+    } else {
+      toast.success("Customer deleted");
+      fetchCustomers();
+    }
   };
 
-  const handleToggleStatus = (id: number) => {
-    setCustomers(customers.map(c => 
-      c.id === id ? { ...c, isActive: !c.isActive } : c
-    ));
+  const handleToggleStatus = async (id: string, currentStatus: boolean) => {
+    const { error } = await supabase
+      .from("customers")
+      .update({ is_active: !currentStatus })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Failed to update status");
+      console.error(error);
+    } else {
+      fetchCustomers();
+    }
   };
 
-  const totalActive = customers.filter(c => c.isActive).length;
-  const totalCow = customers.filter(c => c.milkType === "cow").length;
-  const totalBuffalo = customers.filter(c => c.milkType === "buffalo").length;
+  const totalActive = customers.filter(c => c.is_active).length;
+  const totalCow = customers.filter(c => c.milk_type === "cow").length;
+  const totalBuffalo = customers.filter(c => c.milk_type === "buffalo").length;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -169,7 +234,7 @@ export default function Customers() {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="name">Full Name *</Label>
                 <Input
                   id="name"
                   value={formData.name}
@@ -199,9 +264,9 @@ export default function Customers() {
                 <div className="grid gap-2">
                   <Label>Milk Type</Label>
                   <Select
-                    value={formData.milkType}
+                    value={formData.milk_type}
                     onValueChange={(value: "cow" | "buffalo") => 
-                      setFormData({ ...formData, milkType: value, ratePerLiter: value === "cow" ? 60 : 80 })
+                      setFormData({ ...formData, milk_type: value, rate_per_liter: value === "cow" ? 60 : 80 })
                     }
                   >
                     <SelectTrigger>
@@ -218,8 +283,9 @@ export default function Customers() {
                   <Input
                     id="quantity"
                     type="number"
-                    value={formData.dailyQuantity}
-                    onChange={(e) => setFormData({ ...formData, dailyQuantity: parseFloat(e.target.value) || 0 })}
+                    step="0.5"
+                    value={formData.daily_quantity}
+                    onChange={(e) => setFormData({ ...formData, daily_quantity: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
               </div>
@@ -229,26 +295,26 @@ export default function Customers() {
                   <Input
                     id="rate"
                     type="number"
-                    value={formData.ratePerLiter}
-                    onChange={(e) => setFormData({ ...formData, ratePerLiter: parseFloat(e.target.value) || 0 })}
+                    value={formData.rate_per_liter}
+                    onChange={(e) => setFormData({ ...formData, rate_per_liter: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
                 <div className="grid gap-2">
                   <Label>Status</Label>
                   <div className="flex items-center gap-2 h-10">
                     <Switch
-                      checked={formData.isActive}
-                      onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+                      checked={formData.is_active}
+                      onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
                     />
-                    <span className="text-sm">{formData.isActive ? "Active" : "Inactive"}</span>
+                    <span className="text-sm">{formData.is_active ? "Active" : "Inactive"}</span>
                   </div>
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave}>
-                {editingCustomer ? "Update" : "Add"} Customer
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? "Saving..." : editingCustomer ? "Update" : "Add"} Customer
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -352,15 +418,15 @@ export default function Customers() {
                     <div className="flex items-center gap-2 mt-1">
                       <Badge 
                         variant="secondary"
-                        className={customer.milkType === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
+                        className={customer.milk_type === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
                       >
-                        {customer.milkType}
+                        {customer.milk_type}
                       </Badge>
                       <Badge 
                         variant="outline"
-                        className={customer.isActive ? "status-paid" : "status-unpaid"}
+                        className={customer.is_active ? "status-paid" : "status-unpaid"}
                       >
-                        {customer.isActive ? "Active" : "Inactive"}
+                        {customer.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </div>
                   </div>
@@ -376,9 +442,9 @@ export default function Customers() {
                       <Edit className="w-4 h-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleToggleStatus(customer.id)}>
+                    <DropdownMenuItem onClick={() => handleToggleStatus(customer.id, customer.is_active)}>
                       <Switch className="w-4 h-4 mr-2" />
-                      {customer.isActive ? "Deactivate" : "Activate"}
+                      {customer.is_active ? "Deactivate" : "Activate"}
                     </DropdownMenuItem>
                     <DropdownMenuItem 
                       onClick={() => handleDelete(customer.id)}
@@ -392,24 +458,28 @@ export default function Customers() {
               </div>
 
               <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Phone className="w-4 h-4" />
-                  <span>{customer.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <MapPin className="w-4 h-4" />
-                  <span className="truncate">{customer.address}</span>
-                </div>
+                {customer.phone && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Phone className="w-4 h-4" />
+                    <span>{customer.phone}</span>
+                  </div>
+                )}
+                {customer.address && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <MapPin className="w-4 h-4" />
+                    <span className="truncate">{customer.address}</span>
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">Daily Quantity</p>
-                  <p className="font-semibold">{customer.dailyQuantity} Liters</p>
+                  <p className="font-semibold">{customer.daily_quantity} Liters</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Rate</p>
-                  <p className="font-semibold">₹{customer.ratePerLiter}/L</p>
+                  <p className="font-semibold">₹{customer.rate_per_liter}/L</p>
                 </div>
               </div>
             </CardContent>
@@ -423,31 +493,11 @@ export default function Customers() {
             <Users className="w-8 h-8 text-muted-foreground" />
           </div>
           <h3 className="text-lg font-semibold mb-2">No customers found</h3>
-          <p className="text-muted-foreground">Try adjusting your search or filter</p>
+          <p className="text-muted-foreground">
+            {customers.length === 0 ? "Add your first customer to get started" : "Try adjusting your search or filter"}
+          </p>
         </div>
       )}
     </div>
-  );
-}
-
-function Users(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
   );
 }

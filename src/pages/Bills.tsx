@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   FileText, 
   Download, 
@@ -8,11 +8,11 @@ import {
   Eye,
   CheckCircle,
   XCircle,
-  Calendar
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -27,86 +27,117 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { generateBillPDF } from "@/lib/pdfGenerator";
 
 interface Bill {
   id: string;
-  customerId: number;
-  customerName: string;
-  month: string;
-  totalLiters: number;
-  regularLiters: number;
-  extraLiters: number;
-  ratePerLiter: number;
-  totalAmount: number;
-  status: "paid" | "unpaid" | "partial";
-  paidAmount: number;
-  paymentMode?: "cash" | "online" | "upi";
-  generatedDate: string;
-  dueDate: string;
+  customer_id: string;
+  bill_number: string;
+  month: number;
+  year: number;
+  total_liters: number;
+  total_amount: number;
+  discount: number;
+  late_fee: number;
+  final_amount: number;
+  status: "paid" | "unpaid";
+  payment_mode: "cash" | "online" | "upi" | null;
+  customers: { name: string; phone: string | null; address: string | null };
 }
 
-const mockBills: Bill[] = [
-  { id: "INV-2024-001", customerId: 1, customerName: "Ramesh Kumar", month: "November 2024", totalLiters: 150, regularLiters: 140, extraLiters: 10, ratePerLiter: 60, totalAmount: 9000, status: "paid", paidAmount: 9000, paymentMode: "upi", generatedDate: "2024-12-01", dueDate: "2024-12-10" },
-  { id: "INV-2024-002", customerId: 2, customerName: "Suresh Patel", month: "November 2024", totalLiters: 240, regularLiters: 200, extraLiters: 40, ratePerLiter: 80, totalAmount: 19200, status: "unpaid", paidAmount: 0, generatedDate: "2024-12-01", dueDate: "2024-12-10" },
-  { id: "INV-2024-003", customerId: 3, customerName: "Priya Sharma", month: "November 2024", totalLiters: 90, regularLiters: 90, extraLiters: 0, ratePerLiter: 60, totalAmount: 5400, status: "paid", paidAmount: 5400, paymentMode: "cash", generatedDate: "2024-12-01", dueDate: "2024-12-10" },
-  { id: "INV-2024-004", customerId: 4, customerName: "Amit Singh", month: "November 2024", totalLiters: 180, regularLiters: 160, extraLiters: 20, ratePerLiter: 80, totalAmount: 14400, status: "partial", paidAmount: 7000, paymentMode: "online", generatedDate: "2024-12-01", dueDate: "2024-12-10" },
-  { id: "INV-2024-005", customerId: 5, customerName: "Meera Devi", month: "November 2024", totalLiters: 120, regularLiters: 120, extraLiters: 0, ratePerLiter: 60, totalAmount: 7200, status: "paid", paidAmount: 7200, paymentMode: "upi", generatedDate: "2024-12-01", dueDate: "2024-12-10" },
-  { id: "INV-2024-006", customerId: 6, customerName: "Vikram Yadav", month: "November 2024", totalLiters: 300, regularLiters: 250, extraLiters: 50, ratePerLiter: 85, totalAmount: 25500, status: "unpaid", paidAmount: 0, generatedDate: "2024-12-01", dueDate: "2024-12-10" },
-];
-
 export default function Bills() {
-  const [bills, setBills] = useState<Bill[]>(mockBills);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
+  useEffect(() => {
+    fetchBills();
+  }, []);
+
+  const fetchBills = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("bills")
+      .select("*, customers(name, phone, address)")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      toast.error("Failed to fetch bills");
+    } else {
+      setBills(data as Bill[] || []);
+    }
+    setIsLoading(false);
+  };
+
   const filteredBills = bills.filter((bill) => {
-    const matchesSearch = bill.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         bill.id.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = bill.customers?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         bill.bill_number.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = filterStatus === "all" || bill.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
-  const totalAmount = bills.reduce((sum, b) => sum + b.totalAmount, 0);
-  const paidAmount = bills.reduce((sum, b) => sum + b.paidAmount, 0);
+  const totalAmount = bills.reduce((sum, b) => sum + Number(b.final_amount), 0);
+  const paidAmount = bills.filter(b => b.status === "paid").reduce((sum, b) => sum + Number(b.final_amount), 0);
   const unpaidAmount = totalAmount - paidAmount;
-  const paidCount = bills.filter(b => b.status === "paid").length;
 
-  const handleMarkAsPaid = (billId: string) => {
-    setBills(bills.map(b => 
-      b.id === billId 
-        ? { ...b, status: "paid" as const, paidAmount: b.totalAmount, paymentMode: "cash" as const }
-        : b
-    ));
+  const handleMarkAsPaid = async (billId: string, mode: "cash" | "online" | "upi") => {
+    const { error } = await supabase
+      .from("bills")
+      .update({ status: "paid", payment_mode: mode, payment_date: new Date().toISOString().split('T')[0] })
+      .eq("id", billId);
+
+    if (error) {
+      toast.error("Failed to update bill");
+    } else {
+      toast.success("Bill marked as paid");
+      fetchBills();
+    }
   };
 
-  const handleViewBill = (bill: Bill) => {
-    setSelectedBill(bill);
-    setIsPreviewOpen(true);
+  const handleDownloadPDF = async (bill: Bill) => {
+    const monthNames = ["January", "February", "March", "April", "May", "June", 
+                        "July", "August", "September", "October", "November", "December"];
+    
+    generateBillPDF({
+      id: bill.bill_number,
+      customerName: bill.customers?.name || "Customer",
+      customerPhone: bill.customers?.phone || undefined,
+      month: bill.month,
+      year: bill.year,
+      entries: [],
+      totalLiters: Number(bill.total_liters),
+      totalAmount: Number(bill.total_amount),
+      discount: Number(bill.discount),
+      lateFee: Number(bill.late_fee),
+      finalAmount: Number(bill.final_amount),
+      invoiceHeader: "Anoop Dairy",
+      invoiceFooter: "Thank you for your business!",
+    });
+    toast.success("PDF downloaded");
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-foreground">Monthly Bills</h1>
           <p className="text-muted-foreground">Generate and manage customer invoices</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <Calendar className="w-4 h-4 mr-2" />
-            Select Month
-          </Button>
-          <Button>
-            <FileText className="w-4 h-4 mr-2" />
-            Generate All Bills
-          </Button>
-        </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="stat-card">
           <CardContent className="p-4">
@@ -129,7 +160,7 @@ export default function Bills() {
               </div>
               <div>
                 <p className="text-2xl font-display font-bold">₹{paidAmount.toLocaleString()}</p>
-                <p className="text-sm text-muted-foreground">Collected ({paidCount})</p>
+                <p className="text-sm text-muted-foreground">Collected</p>
               </div>
             </div>
           </CardContent>
@@ -162,7 +193,6 @@ export default function Bills() {
         </Card>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -182,180 +212,63 @@ export default function Bills() {
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="paid">Paid</SelectItem>
             <SelectItem value="unpaid">Unpaid</SelectItem>
-            <SelectItem value="partial">Partial</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {/* Bills Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Invoice</th>
-                <th>Customer</th>
-                <th>Month</th>
-                <th>Liters</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Payment Mode</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredBills.map((bill) => (
-                <tr key={bill.id}>
-                  <td className="font-mono text-sm">{bill.id}</td>
-                  <td>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-sm font-medium text-primary">
-                          {bill.customerName.charAt(0)}
-                        </span>
-                      </div>
-                      <span className="font-medium">{bill.customerName}</span>
-                    </div>
-                  </td>
-                  <td>{bill.month}</td>
-                  <td>
-                    <div>
-                      <span className="font-medium">{bill.totalLiters}L</span>
-                      {bill.extraLiters > 0 && (
-                        <span className="text-xs text-muted-foreground ml-1">
-                          (+{bill.extraLiters} extra)
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="font-semibold">₹{bill.totalAmount.toLocaleString()}</td>
-                  <td>
-                    <Badge 
-                      variant="outline"
-                      className={
-                        bill.status === "paid" ? "status-paid" : 
-                        bill.status === "partial" ? "bg-warning/10 text-warning border-warning/20" :
-                        "status-unpaid"
-                      }
-                    >
-                      {bill.status}
-                      {bill.status === "partial" && ` (₹${bill.paidAmount})`}
-                    </Badge>
-                  </td>
-                  <td>
-                    {bill.paymentMode ? (
-                      <Badge variant="secondary" className="capitalize">
-                        {bill.paymentMode}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="flex items-center gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => handleViewBill(bill)}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon">
-                        <Download className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon">
-                        <Printer className="w-4 h-4" />
-                      </Button>
-                      {bill.status !== "paid" && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => handleMarkAsPaid(bill.id)}
-                          className="text-success hover:text-success"
-                        >
-                          Mark Paid
-                        </Button>
-                      )}
-                    </div>
-                  </td>
+      {bills.length === 0 ? (
+        <Card className="p-12 text-center">
+          <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-semibold mb-2">No bills yet</h3>
+          <p className="text-muted-foreground">Bills will appear here once generated</p>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Invoice</th>
+                  <th>Customer</th>
+                  <th>Period</th>
+                  <th>Liters</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Bill Preview Dialog */}
-      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display">Invoice Preview</DialogTitle>
-          </DialogHeader>
-          {selectedBill && (
-            <div className="space-y-6 p-4 bg-muted/30 rounded-lg">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-xl font-display font-bold text-primary">DairyFlow</h3>
-                  <p className="text-sm text-muted-foreground">Farm Management System</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono font-semibold">{selectedBill.id}</p>
-                  <p className="text-sm text-muted-foreground">{selectedBill.month}</p>
-                </div>
-              </div>
-
-              <div className="border-t border-b border-border py-4">
-                <h4 className="font-semibold mb-2">Bill To:</h4>
-                <p className="font-medium">{selectedBill.customerName}</p>
-              </div>
-
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-2">Description</th>
-                    <th className="text-right py-2">Quantity</th>
-                    <th className="text-right py-2">Rate</th>
-                    <th className="text-right py-2">Amount</th>
+              </thead>
+              <tbody>
+                {filteredBills.map((bill) => (
+                  <tr key={bill.id}>
+                    <td className="font-mono text-sm">{bill.bill_number}</td>
+                    <td className="font-medium">{bill.customers?.name}</td>
+                    <td>{`${bill.month}/${bill.year}`}</td>
+                    <td>{Number(bill.total_liters).toFixed(1)}L</td>
+                    <td className="font-semibold">₹{Number(bill.final_amount).toLocaleString()}</td>
+                    <td>
+                      <Badge variant="outline" className={bill.status === "paid" ? "status-paid" : "status-unpaid"}>
+                        {bill.status}
+                      </Badge>
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleDownloadPDF(bill)}>
+                          <Download className="w-4 h-4" />
+                        </Button>
+                        {bill.status !== "paid" && (
+                          <Button variant="ghost" size="sm" onClick={() => handleMarkAsPaid(bill.id, "cash")} className="text-success">
+                            Mark Paid
+                          </Button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="py-2">Regular Milk</td>
-                    <td className="text-right">{selectedBill.regularLiters} L</td>
-                    <td className="text-right">₹{selectedBill.ratePerLiter}</td>
-                    <td className="text-right">₹{(selectedBill.regularLiters * selectedBill.ratePerLiter).toLocaleString()}</td>
-                  </tr>
-                  {selectedBill.extraLiters > 0 && (
-                    <tr>
-                      <td className="py-2">Extra Milk</td>
-                      <td className="text-right">{selectedBill.extraLiters} L</td>
-                      <td className="text-right">₹{selectedBill.ratePerLiter}</td>
-                      <td className="text-right">₹{(selectedBill.extraLiters * selectedBill.ratePerLiter).toLocaleString()}</td>
-                    </tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-border font-semibold">
-                    <td colSpan={3} className="py-3">Total Amount</td>
-                    <td className="text-right text-lg text-primary">₹{selectedBill.totalAmount.toLocaleString()}</td>
-                  </tr>
-                </tfoot>
-              </table>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline">
-                  <Printer className="w-4 h-4 mr-2" />
-                  Print
-                </Button>
-                <Button>
-                  <Download className="w-4 h-4 mr-2" />
-                  Download PDF
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
