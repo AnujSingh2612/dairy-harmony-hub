@@ -61,9 +61,11 @@ interface MilkEntry {
   id: string;
   customer_id: string;
   date: string;
-  quantity: number;
-  rate: number;
-  amount: number;
+  session: "morning" | "evening";
+  regular_quantity: number;
+  extra_quantity: number;
+  rate_per_liter: number;
+  delivered: boolean;
 }
 
 export default function Bills() {
@@ -138,6 +140,7 @@ export default function Bills() {
       .eq("customer_id", selectedCustomerId)
       .gte("date", startDate)
       .lte("date", endDate)
+      .eq("delivered", true)
       .order("date");
 
     if (error) {
@@ -148,23 +151,31 @@ export default function Bills() {
     }
 
     if (!entries || entries.length === 0) {
-      toast.error("No milk entries found for this period");
+      toast.error("No delivered milk entries found for this period");
       setIsGenerating(false);
       return;
     }
 
-    // Parse and calculate totals with proper number conversion
+    // Calculate totals from regular_quantity + extra_quantity
     const totalLiters = entries.reduce((sum, entry) => {
-      const qty = parseFloat(entry.quantity) || 0;
-      return sum + qty;
+      const regular = parseFloat(entry.regular_quantity) || 0;
+      const extra = parseFloat(entry.extra_quantity) || 0;
+      return sum + regular + extra;
     }, 0);
     
     const totalAmount = entries.reduce((sum, entry) => {
-      const amt = parseFloat(entry.amount) || 0;
-      return sum + amt;
+      const regular = parseFloat(entry.regular_quantity) || 0;
+      const extra = parseFloat(entry.extra_quantity) || 0;
+      const rate = parseFloat(entry.rate_per_liter) || 0;
+      const entryAmount = (regular + extra) * rate;
+      return sum + entryAmount;
     }, 0);
 
-    console.log("Bill Preview:", { entries: entries.length, totalLiters, totalAmount });
+    console.log("Bill Preview:", { 
+      entriesCount: entries.length, 
+      totalLiters, 
+      totalAmount 
+    });
 
     setBillPreview({
       entries: entries as MilkEntry[],
@@ -256,16 +267,33 @@ export default function Bills() {
   };
 
   const handleDownloadPDF = async (bill: Bill) => {
-    const monthNames = ["January", "February", "March", "April", "May", "June", 
-                        "July", "August", "September", "October", "November", "December"];
-    
+    // Fetch milk entries for this bill (only delivered entries)
+    const startDate = new Date(bill.year, bill.month - 1, 1).toISOString().split('T')[0];
+    const endDate = new Date(bill.year, bill.month, 0).toISOString().split('T')[0];
+
+    const { data: entries } = await supabase
+      .from("milk_entries")
+      .select("*")
+      .eq("customer_id", bill.customer_id)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .eq("delivered", true)
+      .order("date");
+
+    // Transform entries to include calculated amount for PDF
+    const formattedEntries = (entries || []).map(entry => ({
+      ...entry,
+      quantity: (parseFloat(entry.regular_quantity) || 0) + (parseFloat(entry.extra_quantity) || 0),
+      amount: ((parseFloat(entry.regular_quantity) || 0) + (parseFloat(entry.extra_quantity) || 0)) * (parseFloat(entry.rate_per_liter) || 0)
+    }));
+
     generateBillPDF({
       id: bill.bill_number,
       customerName: bill.customers?.name || "Customer",
       customerPhone: bill.customers?.phone || undefined,
       month: bill.month,
       year: bill.year,
-      entries: [],
+      entries: formattedEntries,
       totalLiters: Number(bill.total_liters),
       totalAmount: Number(bill.total_amount),
       discount: Number(bill.discount),
