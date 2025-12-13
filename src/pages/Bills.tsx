@@ -141,6 +141,7 @@ export default function Bills() {
       .order("date");
 
     if (error) {
+      console.error("Milk entries fetch error:", error);
       toast.error("Failed to fetch milk entries");
       setIsGenerating(false);
       return;
@@ -152,8 +153,18 @@ export default function Bills() {
       return;
     }
 
-    const totalLiters = entries.reduce((sum, entry) => sum + Number(entry.quantity), 0);
-    const totalAmount = entries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+    // Parse and calculate totals with proper number conversion
+    const totalLiters = entries.reduce((sum, entry) => {
+      const qty = parseFloat(entry.quantity) || 0;
+      return sum + qty;
+    }, 0);
+    
+    const totalAmount = entries.reduce((sum, entry) => {
+      const amt = parseFloat(entry.amount) || 0;
+      return sum + amt;
+    }, 0);
+
+    console.log("Bill Preview:", { entries: entries.length, totalLiters, totalAmount });
 
     setBillPreview({
       entries: entries as MilkEntry[],
@@ -522,11 +533,11 @@ export default function Bills() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Total Liters:</span>
-                      <span className="font-semibold">{billPreview.totalLiters.toFixed(2)}L</span>
+                      <span className="font-semibold">{(billPreview.totalLiters || 0).toFixed(2)}L</span>
                     </div>
                     <div className="flex justify-between pt-2 border-t">
                       <span className="font-semibold">Total Amount:</span>
-                      <span className="font-bold text-lg text-primary">₹{billPreview.totalAmount.toLocaleString()}</span>
+                      <span className="font-bold text-lg text-primary">₹{(billPreview.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 
