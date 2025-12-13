@@ -280,29 +280,45 @@ export default function Bills() {
       .eq("delivered", true)
       .order("date");
 
-    // Transform entries to include calculated amount for PDF
-    const formattedEntries = (entries || []).map(entry => ({
-      ...entry,
-      quantity: (parseFloat(entry.regular_quantity) || 0) + (parseFloat(entry.extra_quantity) || 0),
-      amount: ((parseFloat(entry.regular_quantity) || 0) + (parseFloat(entry.extra_quantity) || 0)) * (parseFloat(entry.rate_per_liter) || 0)
-    }));
-
-    generateBillPDF({
-      id: bill.bill_number,
-      customerName: bill.customers?.name || "Customer",
-      customerPhone: bill.customers?.phone || undefined,
-      month: bill.month,
-      year: bill.year,
-      entries: formattedEntries,
-      totalLiters: Number(bill.total_liters),
-      totalAmount: Number(bill.total_amount),
-      discount: Number(bill.discount),
-      lateFee: Number(bill.late_fee),
-      finalAmount: Number(bill.final_amount),
-      invoiceHeader: "Anoop Dairy",
-      invoiceFooter: "Thank you for your business!",
+    // Transform entries to match PDF generator format
+    const formattedEntries = (entries || []).map(entry => {
+      const regular = parseFloat(entry.regular_quantity) || 0;
+      const extra = parseFloat(entry.extra_quantity) || 0;
+      const rate = parseFloat(entry.rate_per_liter) || 0;
+      const total = (regular + extra) * rate;
+      
+      return {
+        date: entry.date,
+        session: entry.session,
+        regularQuantity: regular,
+        extraQuantity: extra,
+        ratePerLiter: rate,
+        totalAmount: total
+      };
     });
-    toast.success("PDF downloaded");
+
+    try {
+      generateBillPDF({
+        id: bill.bill_number,
+        customerName: bill.customers?.name || "Customer",
+        customerPhone: bill.customers?.phone || undefined,
+        customerAddress: bill.customers?.address || undefined,
+        month: bill.month,
+        year: bill.year,
+        entries: formattedEntries,
+        totalLiters: Number(bill.total_liters),
+        totalAmount: Number(bill.total_amount),
+        discount: Number(bill.discount),
+        lateFee: Number(bill.late_fee),
+        finalAmount: Number(bill.final_amount),
+        invoiceHeader: "Anoop Dairy",
+        invoiceFooter: "Thank you for your business!",
+      });
+      toast.success("PDF downloaded successfully");
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      toast.error("Failed to generate PDF");
+    }
   };
 
   const monthNames = ["January", "February", "March", "April", "May", "June", 
