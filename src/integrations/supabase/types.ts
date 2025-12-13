@@ -14,16 +14,343 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_settings: {
+        Row: {
+          id: string
+          setting_key: string
+          setting_value: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          setting_key: string
+          setting_value?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          setting_key?: string
+          setting_value?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      bills: {
+        Row: {
+          bill_number: string
+          created_at: string | null
+          customer_id: string
+          discount: number | null
+          final_amount: number
+          id: string
+          late_fee: number | null
+          month: number
+          payment_date: string | null
+          payment_mode: Database["public"]["Enums"]["payment_mode"] | null
+          status: Database["public"]["Enums"]["bill_status"] | null
+          total_amount: number
+          total_liters: number
+          updated_at: string | null
+          year: number
+        }
+        Insert: {
+          bill_number: string
+          created_at?: string | null
+          customer_id: string
+          discount?: number | null
+          final_amount?: number
+          id?: string
+          late_fee?: number | null
+          month: number
+          payment_date?: string | null
+          payment_mode?: Database["public"]["Enums"]["payment_mode"] | null
+          status?: Database["public"]["Enums"]["bill_status"] | null
+          total_amount?: number
+          total_liters?: number
+          updated_at?: string | null
+          year: number
+        }
+        Update: {
+          bill_number?: string
+          created_at?: string | null
+          customer_id?: string
+          discount?: number | null
+          final_amount?: number
+          id?: string
+          late_fee?: number | null
+          month?: number
+          payment_date?: string | null
+          payment_mode?: Database["public"]["Enums"]["payment_mode"] | null
+          status?: Database["public"]["Enums"]["bill_status"] | null
+          total_amount?: number
+          total_liters?: number
+          updated_at?: string | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bills_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          daily_quantity: number
+          id: string
+          is_active: boolean | null
+          milk_type: Database["public"]["Enums"]["milk_type"]
+          name: string
+          phone: string | null
+          rate_per_liter: number
+          updated_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          daily_quantity?: number
+          id?: string
+          is_active?: boolean | null
+          milk_type?: Database["public"]["Enums"]["milk_type"]
+          name: string
+          phone?: string | null
+          rate_per_liter?: number
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          daily_quantity?: number
+          id?: string
+          is_active?: boolean | null
+          milk_type?: Database["public"]["Enums"]["milk_type"]
+          name?: string
+          phone?: string | null
+          rate_per_liter?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      expense_categories: {
+        Row: {
+          created_at: string | null
+          icon: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      expenses: {
+        Row: {
+          amount: number
+          category_id: string | null
+          created_at: string | null
+          date: string
+          description: string | null
+          id: string
+          receipt_url: string | null
+        }
+        Insert: {
+          amount: number
+          category_id?: string | null
+          created_at?: string | null
+          date?: string
+          description?: string | null
+          id?: string
+          receipt_url?: string | null
+        }
+        Update: {
+          amount?: number
+          category_id?: string | null
+          created_at?: string | null
+          date?: string
+          description?: string | null
+          id?: string
+          receipt_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "expense_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      milk_entries: {
+        Row: {
+          created_at: string | null
+          customer_id: string
+          date: string
+          delivered: boolean | null
+          extra_quantity: number | null
+          id: string
+          rate_per_liter: number
+          regular_quantity: number
+          session: Database["public"]["Enums"]["session_type"]
+          total_amount: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          customer_id: string
+          date?: string
+          delivered?: boolean | null
+          extra_quantity?: number | null
+          id?: string
+          rate_per_liter: number
+          regular_quantity?: number
+          session: Database["public"]["Enums"]["session_type"]
+          total_amount?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          customer_id?: string
+          date?: string
+          delivered?: boolean | null
+          extra_quantity?: number | null
+          id?: string
+          rate_per_liter?: number
+          regular_quantity?: number
+          session?: Database["public"]["Enums"]["session_type"]
+          total_amount?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "milk_entries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: {
+          amount: number
+          bill_id: string
+          created_at: string | null
+          customer_id: string
+          id: string
+          notes: string | null
+          payment_date: string
+          payment_mode: Database["public"]["Enums"]["payment_mode"]
+        }
+        Insert: {
+          amount: number
+          bill_id: string
+          created_at?: string | null
+          customer_id: string
+          id?: string
+          notes?: string | null
+          payment_date?: string
+          payment_mode: Database["public"]["Enums"]["payment_mode"]
+        }
+        Update: {
+          amount?: number
+          bill_id?: string
+          created_at?: string | null
+          customer_id?: string
+          id?: string
+          notes?: string | null
+          payment_date?: string
+          payment_mode?: Database["public"]["Enums"]["payment_mode"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id: string
+          updated_at?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      bill_status: "paid" | "unpaid"
+      milk_type: "cow" | "buffalo"
+      payment_mode: "cash" | "online" | "upi"
+      session_type: "morning" | "evening"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +477,12 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      bill_status: ["paid", "unpaid"],
+      milk_type: ["cow", "buffalo"],
+      payment_mode: ["cash", "online", "upi"],
+      session_type: ["morning", "evening"],
+    },
   },
 } as const
