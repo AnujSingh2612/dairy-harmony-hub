@@ -1,137 +1,113 @@
-import { useState } from "react";
-import { 
-  Settings as SettingsIcon, 
-  IndianRupee, 
-  FileText, 
-  Palette,
-  Users,
-  Database,
-  Bell,
-  Shield,
-  Save
-} from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings as SettingsIcon, IndianRupee, FileText, Palette, Database, Save, LogOut, Moon, Sun, Languages } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 
 export default function Settings() {
-  const [milkRates, setMilkRates] = useState({
-    cowRate: 60,
-    buffaloRate: 80,
-  });
+  const { signOut, user } = useAuth();
+  const { theme, setTheme, language, setLanguage } = useTheme();
+  const [isSaving, setIsSaving] = useState(false);
 
+  const [milkRates, setMilkRates] = useState({ cow: 60, buffalo: 80 });
   const [billingSettings, setBillingSettings] = useState({
-    autoBillGeneration: true,
-    includeLateFee: false,
-    lateFeeAmount: 50,
-    discountEnabled: false,
-    discountPercentage: 5,
-    invoiceHeader: "DairyFlow Farm",
-    invoiceFooter: "Thank you for your business!",
+    auto_bill: false,
+    discount: 0,
+    late_fee: 0,
+    invoice_header: "Anoop Dairy",
+    invoice_footer: "Thank you for your business!",
   });
+  const [appSettings, setAppSettings] = useState({ name: "Anoop Dairy", notifications: true });
 
-  const [appSettings, setAppSettings] = useState({
-    appName: "DairyFlow",
-    notifications: true,
-    emailAlerts: false,
-  });
+  useEffect(() => {
+    fetchSettings();
+  }, []);
 
-  const handleSaveRates = () => {
-    toast.success("Milk rates updated successfully!");
+  const fetchSettings = async () => {
+    const { data } = await supabase.from("app_settings").select("*");
+    if (data) {
+      data.forEach((setting) => {
+        if (setting.setting_key === "milk_rates" && setting.setting_value) {
+          setMilkRates(setting.setting_value as any);
+        }
+        if (setting.setting_key === "billing" && setting.setting_value) {
+          setBillingSettings(setting.setting_value as any);
+        }
+        if (setting.setting_key === "app" && setting.setting_value) {
+          setAppSettings(setting.setting_value as any);
+        }
+      });
+    }
   };
 
-  const handleSaveBilling = () => {
-    toast.success("Billing settings saved!");
+  const saveSetting = async (key: string, value: any) => {
+    setIsSaving(true);
+    const { error } = await supabase
+      .from("app_settings")
+      .update({ setting_value: value })
+      .eq("setting_key", key);
+
+    if (error) {
+      toast.error("Failed to save settings");
+    } else {
+      toast.success("Settings saved!");
+    }
+    setIsSaving(false);
   };
 
-  const handleSaveApp = () => {
-    toast.success("App settings updated!");
+  const handleLogout = async () => {
+    await signOut();
+    toast.success("Logged out successfully");
   };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-display font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground">Configure your farm management system</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-foreground">Settings</h1>
+          <p className="text-muted-foreground">Configure your farm management system</p>
+        </div>
+        <Button variant="destructive" onClick={handleLogout}>
+          <LogOut className="w-4 h-4 mr-2" />
+          Logout
+        </Button>
       </div>
 
-      {/* Settings Tabs */}
       <Tabs defaultValue="rates" className="w-full">
-        <TabsList className="grid w-full md:w-auto grid-cols-2 md:grid-cols-5">
-          <TabsTrigger value="rates" className="gap-2">
-            <IndianRupee className="w-4 h-4" />
-            <span className="hidden md:inline">Milk Rates</span>
-          </TabsTrigger>
-          <TabsTrigger value="billing" className="gap-2">
-            <FileText className="w-4 h-4" />
-            <span className="hidden md:inline">Billing</span>
-          </TabsTrigger>
-          <TabsTrigger value="app" className="gap-2">
-            <Palette className="w-4 h-4" />
-            <span className="hidden md:inline">App</span>
-          </TabsTrigger>
-          <TabsTrigger value="users" className="gap-2">
-            <Users className="w-4 h-4" />
-            <span className="hidden md:inline">Users</span>
-          </TabsTrigger>
-          <TabsTrigger value="backup" className="gap-2">
-            <Database className="w-4 h-4" />
-            <span className="hidden md:inline">Backup</span>
-          </TabsTrigger>
+        <TabsList className="grid w-full md:w-auto grid-cols-2 md:grid-cols-4">
+          <TabsTrigger value="rates"><IndianRupee className="w-4 h-4 mr-2" />Rates</TabsTrigger>
+          <TabsTrigger value="billing"><FileText className="w-4 h-4 mr-2" />Billing</TabsTrigger>
+          <TabsTrigger value="app"><Palette className="w-4 h-4 mr-2" />Theme</TabsTrigger>
+          <TabsTrigger value="account"><Database className="w-4 h-4 mr-2" />Account</TabsTrigger>
         </TabsList>
 
         <TabsContent value="rates" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <IndianRupee className="w-5 h-5 text-primary" />
-                Milk Rate Settings
-              </CardTitle>
-              <CardDescription>
-                Configure default rates for different milk types
-              </CardDescription>
+              <CardTitle>Milk Rate Settings</CardTitle>
+              <CardDescription>Configure default rates for different milk types</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="cowRate">Cow Milk Rate (₹ per liter)</Label>
-                  <Input
-                    id="cowRate"
-                    type="number"
-                    value={milkRates.cowRate}
-                    onChange={(e) => setMilkRates({ ...milkRates, cowRate: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-xs text-muted-foreground">Default rate for cow milk deliveries</p>
+                  <Label>Cow Milk Rate (₹ per liter)</Label>
+                  <Input type="number" value={milkRates.cow} onChange={(e) => setMilkRates({ ...milkRates, cow: Number(e.target.value) })} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="buffaloRate">Buffalo Milk Rate (₹ per liter)</Label>
-                  <Input
-                    id="buffaloRate"
-                    type="number"
-                    value={milkRates.buffaloRate}
-                    onChange={(e) => setMilkRates({ ...milkRates, buffaloRate: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-xs text-muted-foreground">Default rate for buffalo milk deliveries</p>
+                  <Label>Buffalo Milk Rate (₹ per liter)</Label>
+                  <Input type="number" value={milkRates.buffalo} onChange={(e) => setMilkRates({ ...milkRates, buffalo: Number(e.target.value) })} />
                 </div>
               </div>
-              
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <h4 className="font-medium mb-2">Special Customer Rates</h4>
-                <p className="text-sm text-muted-foreground mb-3">
-                  You can set custom rates for individual customers in their profile settings.
-                </p>
-                <Button variant="outline" size="sm">Manage Customer Rates</Button>
-              </div>
-
-              <Button onClick={handleSaveRates}>
-                <Save className="w-4 h-4 mr-2" />
-                Save Rates
+              <Button onClick={() => saveSetting("milk_rates", milkRates)} disabled={isSaving}>
+                <Save className="w-4 h-4 mr-2" />{isSaving ? "Saving..." : "Save Rates"}
               </Button>
             </CardContent>
           </Card>
@@ -140,95 +116,39 @@ export default function Settings() {
         <TabsContent value="billing" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                Billing Settings
-              </CardTitle>
-              <CardDescription>
-                Configure invoice generation and payment options
-              </CardDescription>
+              <CardTitle>Billing Settings</CardTitle>
+              <CardDescription>Configure invoice generation options</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                  <div>
-                    <Label className="text-base">Auto Bill Generation</Label>
-                    <p className="text-sm text-muted-foreground">Automatically generate bills at month-end</p>
-                  </div>
-                  <Switch
-                    checked={billingSettings.autoBillGeneration}
-                    onCheckedChange={(checked) => setBillingSettings({ ...billingSettings, autoBillGeneration: checked })}
-                  />
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div>
+                  <Label>Auto Bill Generation</Label>
+                  <p className="text-sm text-muted-foreground">Automatically generate bills at month-end</p>
                 </div>
-
-                <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                  <div>
-                    <Label className="text-base">Late Fee</Label>
-                    <p className="text-sm text-muted-foreground">Apply late fee for overdue payments</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {billingSettings.includeLateFee && (
-                      <Input
-                        type="number"
-                        value={billingSettings.lateFeeAmount}
-                        onChange={(e) => setBillingSettings({ ...billingSettings, lateFeeAmount: parseFloat(e.target.value) || 0 })}
-                        className="w-24"
-                      />
-                    )}
-                    <Switch
-                      checked={billingSettings.includeLateFee}
-                      onCheckedChange={(checked) => setBillingSettings({ ...billingSettings, includeLateFee: checked })}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                  <div>
-                    <Label className="text-base">Discount</Label>
-                    <p className="text-sm text-muted-foreground">Apply discount on total bill</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {billingSettings.discountEnabled && (
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          value={billingSettings.discountPercentage}
-                          onChange={(e) => setBillingSettings({ ...billingSettings, discountPercentage: parseFloat(e.target.value) || 0 })}
-                          className="w-20"
-                        />
-                        <span className="text-muted-foreground">%</span>
-                      </div>
-                    )}
-                    <Switch
-                      checked={billingSettings.discountEnabled}
-                      onCheckedChange={(checked) => setBillingSettings({ ...billingSettings, discountEnabled: checked })}
-                    />
-                  </div>
-                </div>
+                <Switch checked={billingSettings.auto_bill} onCheckedChange={(v) => setBillingSettings({ ...billingSettings, auto_bill: v })} />
               </div>
-
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="invoiceHeader">Invoice Header</Label>
-                  <Input
-                    id="invoiceHeader"
-                    value={billingSettings.invoiceHeader}
-                    onChange={(e) => setBillingSettings({ ...billingSettings, invoiceHeader: e.target.value })}
-                  />
+                  <Label>Discount (%)</Label>
+                  <Input type="number" value={billingSettings.discount} onChange={(e) => setBillingSettings({ ...billingSettings, discount: Number(e.target.value) })} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="invoiceFooter">Invoice Footer</Label>
-                  <Input
-                    id="invoiceFooter"
-                    value={billingSettings.invoiceFooter}
-                    onChange={(e) => setBillingSettings({ ...billingSettings, invoiceFooter: e.target.value })}
-                  />
+                  <Label>Late Fee (₹)</Label>
+                  <Input type="number" value={billingSettings.late_fee} onChange={(e) => setBillingSettings({ ...billingSettings, late_fee: Number(e.target.value) })} />
                 </div>
               </div>
-
-              <Button onClick={handleSaveBilling}>
-                <Save className="w-4 h-4 mr-2" />
-                Save Billing Settings
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Invoice Header</Label>
+                  <Input value={billingSettings.invoice_header} onChange={(e) => setBillingSettings({ ...billingSettings, invoice_header: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Invoice Footer</Label>
+                  <Input value={billingSettings.invoice_footer} onChange={(e) => setBillingSettings({ ...billingSettings, invoice_footer: e.target.value })} />
+                </div>
+              </div>
+              <Button onClick={() => saveSetting("billing", billingSettings)} disabled={isSaving}>
+                <Save className="w-4 h-4 mr-2" />{isSaving ? "Saving..." : "Save Billing Settings"}
               </Button>
             </CardContent>
           </Card>
@@ -237,105 +157,52 @@ export default function Settings() {
         <TabsContent value="app" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Palette className="w-5 h-5 text-primary" />
-                App Settings
-              </CardTitle>
-              <CardDescription>
-                Customize your application appearance and notifications
-              </CardDescription>
+              <CardTitle>Theme & Language</CardTitle>
+              <CardDescription>Customize app appearance</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="appName">App Name</Label>
-                <Input
-                  id="appName"
-                  value={appSettings.appName}
-                  onChange={(e) => setAppSettings({ ...appSettings, appName: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Bell className="w-5 h-5 text-muted-foreground" />
-                    <div>
-                      <Label className="text-base">Push Notifications</Label>
-                      <p className="text-sm text-muted-foreground">Receive in-app notifications</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appSettings.notifications}
-                    onCheckedChange={(checked) => setAppSettings({ ...appSettings, notifications: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Bell className="w-5 h-5 text-muted-foreground" />
-                    <div>
-                      <Label className="text-base">Email Alerts</Label>
-                      <p className="text-sm text-muted-foreground">Get important updates via email</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appSettings.emailAlerts}
-                    onCheckedChange={(checked) => setAppSettings({ ...appSettings, emailAlerts: checked })}
-                  />
+                <Label>Theme</Label>
+                <div className="flex gap-4">
+                  <Button variant={theme === "light" ? "default" : "outline"} onClick={() => setTheme("light")}>
+                    <Sun className="w-4 h-4 mr-2" />Light
+                  </Button>
+                  <Button variant={theme === "dark" ? "default" : "outline"} onClick={() => setTheme("dark")}>
+                    <Moon className="w-4 h-4 mr-2" />Dark
+                  </Button>
                 </div>
               </div>
-
-              <Button onClick={handleSaveApp}>
-                <Save className="w-4 h-4 mr-2" />
-                Save App Settings
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="users" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-primary" />
-                User Management
-              </CardTitle>
-              <CardDescription>
-                Manage admin users and permissions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <Shield className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Connect Backend Required</h3>
-                <p className="text-muted-foreground mb-4">
-                  Enable Lovable Cloud to manage users, roles, and permissions
-                </p>
-                <Button>Enable Lovable Cloud</Button>
+              <div className="space-y-2">
+                <Label>Language</Label>
+                <Select value={language} onValueChange={(v: "en" | "hi") => setLanguage(v)}>
+                  <SelectTrigger className="w-[200px]">
+                    <Languages className="w-4 h-4 mr-2" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="hi">हिंदी (Hindi)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="backup" className="mt-6">
+        <TabsContent value="account" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="w-5 h-5 text-primary" />
-                Backup & Restore
-              </CardTitle>
-              <CardDescription>
-                Manage your data backups
-              </CardDescription>
+              <CardTitle>Account Information</CardTitle>
+              <CardDescription>Your account details</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <Database className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Connect Backend Required</h3>
-                <p className="text-muted-foreground mb-4">
-                  Enable Lovable Cloud for automatic backups and data restoration
-                </p>
-                <Button>Enable Lovable Cloud</Button>
+            <CardContent className="space-y-4">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground">Email</p>
+                <p className="font-medium">{user?.email}</p>
+              </div>
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground">Account ID</p>
+                <p className="font-mono text-sm">{user?.id}</p>
               </div>
             </CardContent>
           </Card>
