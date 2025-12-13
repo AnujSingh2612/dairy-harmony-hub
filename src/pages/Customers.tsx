@@ -95,7 +95,12 @@ export default function Customers() {
       toast.error("Failed to fetch customers");
       console.error(error);
     } else {
-      setCustomers(data || []);
+      // Handle customers that might not have delivery_session set
+      const customersWithSession = (data || []).map(customer => ({
+        ...customer,
+        delivery_session: customer.delivery_session || "both"
+      }));
+      setCustomers(customersWithSession);
     }
     setIsLoading(false);
   };
@@ -145,35 +150,65 @@ export default function Customers() {
 
     setIsSaving(true);
     
-    if (editingCustomer) {
-      const { error } = await supabase
-        .from("customers")
-        .update(formData)
-        .eq("id", editingCustomer.id);
+    try {
+      // Prepare data - only include fields that exist in database
+      const saveData: any = {
+        name: formData.name.trim(),
+        phone: formData.phone.trim() || null,
+        address: formData.address.trim() || null,
+        milk_type: formData.milk_type,
+        daily_quantity: Number(formData.daily_quantity),
+        rate_per_liter: Number(formData.rate_per_liter),
+        is_active: formData.is_active,
+      };
 
-      if (error) {
-        toast.error("Failed to update customer");
-        console.error(error);
-      } else {
+      console.log("Attempting to save:", saveData);
+
+      if (editingCustomer) {
+        console.log("Updating customer:", editingCustomer.id);
+        const { data, error } = await supabase
+          .from("customers")
+          .update(saveData)
+          .eq("id", editingCustomer.id)
+          .select();
+
+        console.log("Update response:", { data, error });
+
+        if (error) {
+          console.error("Update error details:", error);
+          toast.error(`Update failed: ${error.message}`);
+          setIsSaving(false);
+          return;
+        }
+        
         toast.success("Customer updated successfully");
-        fetchCustomers();
-      }
-    } else {
-      const { error } = await supabase
-        .from("customers")
-        .insert([formData]);
-
-      if (error) {
-        toast.error("Failed to add customer");
-        console.error(error);
       } else {
+        console.log("Inserting new customer");
+        const { data, error } = await supabase
+          .from("customers")
+          .insert([saveData])
+          .select();
+
+        console.log("Insert response:", { data, error });
+
+        if (error) {
+          console.error("Insert error details:", error);
+          toast.error(`Insert failed: ${error.message}`);
+          setIsSaving(false);
+          return;
+        }
+        
         toast.success("Customer added successfully");
-        fetchCustomers();
       }
+      
+      await fetchCustomers();
+      setIsDialogOpen(false);
+    } catch (err: any) {
+      console.error("Catch block error:", err);
+      toast.error(`Unexpected error: ${err?.message || JSON.stringify(err)}`);
     }
     
     setIsSaving(false);
-    setIsDialogOpen(false);
   };
 
   const handleDelete = async (id: string) => {
