@@ -1,17 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   CreditCard, 
   Search, 
   Filter,
   IndianRupee,
-  Wallet,
   Smartphone,
   Banknote,
-  TrendingUp
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -20,26 +19,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Payment {
   id: string;
-  invoiceId: string;
-  customerName: string;
+  bill_id: string;
+  customer_id: string;
   amount: number;
-  paymentMode: "cash" | "online" | "upi";
-  date: string;
-  time: string;
-  status: "success" | "pending" | "failed";
-  reference?: string;
+  payment_mode: "cash" | "online" | "upi";
+  payment_date: string;
+  notes: string | null;
+  customers: { name: string } | null;
+  bills: { bill_number: string } | null;
 }
-
-const mockPayments: Payment[] = [
-  { id: "PAY-001", invoiceId: "INV-2024-001", customerName: "Ramesh Kumar", amount: 9000, paymentMode: "upi", date: "2024-12-05", time: "10:30 AM", status: "success", reference: "UPI123456" },
-  { id: "PAY-002", invoiceId: "INV-2024-003", customerName: "Priya Sharma", amount: 5400, paymentMode: "cash", date: "2024-12-04", time: "09:15 AM", status: "success" },
-  { id: "PAY-003", invoiceId: "INV-2024-004", customerName: "Amit Singh", amount: 7000, paymentMode: "online", date: "2024-12-03", time: "02:45 PM", status: "success", reference: "NEFT789012" },
-  { id: "PAY-004", invoiceId: "INV-2024-005", customerName: "Meera Devi", amount: 7200, paymentMode: "upi", date: "2024-12-02", time: "11:00 AM", status: "success", reference: "UPI654321" },
-  { id: "PAY-005", invoiceId: "INV-2024-007", customerName: "Raj Malhotra", amount: 4500, paymentMode: "online", date: "2024-12-01", time: "04:30 PM", status: "pending", reference: "NEFT456789" },
-];
 
 const paymentModeIcons = {
   cash: Banknote,
@@ -48,21 +41,50 @@ const paymentModeIcons = {
 };
 
 export default function Payments() {
-  const [payments] = useState<Payment[]>(mockPayments);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterMode, setFilterMode] = useState<string>("all");
 
+  useEffect(() => {
+    fetchPayments();
+  }, []);
+
+  const fetchPayments = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("payments")
+      .select("*, customers(name), bills(bill_number)")
+      .order("payment_date", { ascending: false });
+
+    if (error) {
+      toast.error("Failed to fetch payments");
+      console.error(error);
+    } else {
+      setPayments(data as Payment[] || []);
+    }
+    setIsLoading(false);
+  };
+
   const filteredPayments = payments.filter((payment) => {
-    const matchesSearch = payment.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         payment.invoiceId.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesMode = filterMode === "all" || payment.paymentMode === filterMode;
+    const matchesSearch = payment.customers?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         payment.bills?.bill_number?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesMode = filterMode === "all" || payment.payment_mode === filterMode;
     return matchesSearch && matchesMode;
   });
 
-  const totalCollected = payments.filter(p => p.status === "success").reduce((sum, p) => sum + p.amount, 0);
-  const cashTotal = payments.filter(p => p.paymentMode === "cash" && p.status === "success").reduce((sum, p) => sum + p.amount, 0);
-  const onlineTotal = payments.filter(p => p.paymentMode === "online" && p.status === "success").reduce((sum, p) => sum + p.amount, 0);
-  const upiTotal = payments.filter(p => p.paymentMode === "upi" && p.status === "success").reduce((sum, p) => sum + p.amount, 0);
+  const totalCollected = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+  const cashTotal = payments.filter(p => p.payment_mode === "cash").reduce((sum, p) => sum + Number(p.amount), 0);
+  const onlineTotal = payments.filter(p => p.payment_mode === "online").reduce((sum, p) => sum + Number(p.amount), 0);
+  const upiTotal = payments.filter(p => p.payment_mode === "upi").reduce((sum, p) => sum + Number(p.amount), 0);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -72,10 +94,6 @@ export default function Payments() {
           <h1 className="text-2xl font-display font-bold text-foreground">Payments</h1>
           <p className="text-muted-foreground">Track all payment transactions</p>
         </div>
-        <Button>
-          <CreditCard className="w-4 h-4 mr-2" />
-          Record Payment
-        </Button>
       </div>
 
       {/* Stats Cards */}
@@ -160,75 +178,65 @@ export default function Payments() {
       </div>
 
       {/* Payments Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Payment ID</th>
-                <th>Customer</th>
-                <th>Invoice</th>
-                <th>Amount</th>
-                <th>Mode</th>
-                <th>Date & Time</th>
-                <th>Reference</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPayments.map((payment) => {
-                const ModeIcon = paymentModeIcons[payment.paymentMode];
-                return (
-                  <tr key={payment.id}>
-                    <td className="font-mono text-sm">{payment.id}</td>
-                    <td>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="text-sm font-medium text-primary">
-                            {payment.customerName.charAt(0)}
-                          </span>
+      {payments.length === 0 ? (
+        <Card className="p-12 text-center">
+          <CreditCard className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-semibold mb-2">No payments yet</h3>
+          <p className="text-muted-foreground">Payments will appear here when bills are marked as paid</p>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Invoice</th>
+                  <th>Amount</th>
+                  <th>Mode</th>
+                  <th>Date</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPayments.map((payment) => {
+                  const ModeIcon = paymentModeIcons[payment.payment_mode];
+                  return (
+                    <tr key={payment.id}>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-sm font-medium text-primary">
+                              {payment.customers?.name?.charAt(0) || "?"}
+                            </span>
+                          </div>
+                          <span className="font-medium">{payment.customers?.name || "Unknown"}</span>
                         </div>
-                        <span className="font-medium">{payment.customerName}</span>
-                      </div>
-                    </td>
-                    <td className="font-mono text-sm text-muted-foreground">{payment.invoiceId}</td>
-                    <td className="font-semibold text-success">₹{payment.amount.toLocaleString()}</td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <ModeIcon className="w-4 h-4 text-muted-foreground" />
-                        <Badge variant="secondary" className="capitalize">
-                          {payment.paymentMode}
-                        </Badge>
-                      </div>
-                    </td>
-                    <td>
-                      <div>
-                        <p className="font-medium">{payment.date}</p>
-                        <p className="text-xs text-muted-foreground">{payment.time}</p>
-                      </div>
-                    </td>
-                    <td className="font-mono text-sm">
-                      {payment.reference || "-"}
-                    </td>
-                    <td>
-                      <Badge 
-                        variant="outline"
-                        className={
-                          payment.status === "success" ? "status-paid" : 
-                          payment.status === "pending" ? "bg-warning/10 text-warning border-warning/20" :
-                          "status-unpaid"
-                        }
-                      >
-                        {payment.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                      </td>
+                      <td className="font-mono text-sm text-muted-foreground">
+                        {payment.bills?.bill_number || "-"}
+                      </td>
+                      <td className="font-semibold text-success">₹{Number(payment.amount).toLocaleString()}</td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <ModeIcon className="w-4 h-4 text-muted-foreground" />
+                          <Badge variant="secondary" className="capitalize">
+                            {payment.payment_mode}
+                          </Badge>
+                        </div>
+                      </td>
+                      <td className="font-medium">{payment.payment_date}</td>
+                      <td className="text-muted-foreground">
+                        {payment.notes || "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
