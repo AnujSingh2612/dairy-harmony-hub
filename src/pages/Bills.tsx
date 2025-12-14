@@ -158,15 +158,15 @@ export default function Bills() {
 
     // Calculate totals from regular_quantity + extra_quantity
     const totalLiters = entries.reduce((sum, entry) => {
-      const regular = parseFloat(entry.regular_quantity) || 0;
-      const extra = parseFloat(entry.extra_quantity) || 0;
+      const regular = Number(entry.regular_quantity) || 0;
+      const extra = Number(entry.extra_quantity) || 0;
       return sum + regular + extra;
     }, 0);
     
     const totalAmount = entries.reduce((sum, entry) => {
-      const regular = parseFloat(entry.regular_quantity) || 0;
-      const extra = parseFloat(entry.extra_quantity) || 0;
-      const rate = parseFloat(entry.rate_per_liter) || 0;
+      const regular = Number(entry.regular_quantity) || 0;
+      const extra = Number(entry.extra_quantity) || 0;
+      const rate = Number(entry.rate_per_liter) || 0;
       const entryAmount = (regular + extra) * rate;
       return sum + entryAmount;
     }, 0);
@@ -282,9 +282,9 @@ export default function Bills() {
 
     // Transform entries to match PDF generator format
     const formattedEntries = (entries || []).map(entry => {
-      const regular = parseFloat(entry.regular_quantity) || 0;
-      const extra = parseFloat(entry.extra_quantity) || 0;
-      const rate = parseFloat(entry.rate_per_liter) || 0;
+      const regular = Number(entry.regular_quantity) || 0;
+      const extra = Number(entry.extra_quantity) || 0;
+      const rate = Number(entry.rate_per_liter) || 0;
       const total = (regular + extra) * rate;
       
       return {
@@ -303,8 +303,8 @@ export default function Bills() {
         customerName: bill.customers?.name || "Customer",
         customerPhone: bill.customers?.phone || undefined,
         customerAddress: bill.customers?.address || undefined,
-        month: bill.month,
-        year: bill.year,
+        month: Number(bill.month),
+        year: Number(bill.year),
         entries: formattedEntries,
         totalLiters: Number(bill.total_liters),
         totalAmount: Number(bill.total_amount),

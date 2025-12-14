@@ -10,10 +10,7 @@ import {
   MapPin,
   Milk,
   Users,
-  Loader2,
-  Sun,
-  Moon,
-  Clock
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +52,6 @@ interface Customer {
   daily_quantity: number;
   rate_per_liter: number;
   is_active: boolean;
-  delivery_session: "morning" | "evening" | "both";
   created_at: string;
 }
 
@@ -64,7 +60,6 @@ export default function Customers() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
-  const [filterSession, setFilterSession] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -77,7 +72,6 @@ export default function Customers() {
     daily_quantity: 1,
     rate_per_liter: 60,
     is_active: true,
-    delivery_session: "both" as "morning" | "evening" | "both",
   });
 
   useEffect(() => {
@@ -95,12 +89,7 @@ export default function Customers() {
       toast.error("Failed to fetch customers");
       console.error(error);
     } else {
-      // Handle customers that might not have delivery_session set
-      const customersWithSession = (data || []).map(customer => ({
-        ...customer,
-        delivery_session: customer.delivery_session || "both"
-      }));
-      setCustomers(customersWithSession);
+      setCustomers(data || []);
     }
     setIsLoading(false);
   };
@@ -109,8 +98,7 @@ export default function Customers() {
     const matchesSearch = customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          (customer.phone && customer.phone.includes(searchQuery));
     const matchesType = filterType === "all" || customer.milk_type === filterType;
-    const matchesSession = filterSession === "all" || customer.delivery_session === filterSession || customer.delivery_session === "both";
-    return matchesSearch && matchesType && matchesSession;
+    return matchesSearch && matchesType;
   });
 
   const handleOpenDialog = (customer?: Customer) => {
@@ -124,7 +112,6 @@ export default function Customers() {
         daily_quantity: customer.daily_quantity,
         rate_per_liter: customer.rate_per_liter,
         is_active: customer.is_active,
-        delivery_session: customer.delivery_session || "both",
       });
     } else {
       setEditingCustomer(null);
@@ -136,7 +123,6 @@ export default function Customers() {
         daily_quantity: 1,
         rate_per_liter: 60,
         is_active: true,
-        delivery_session: "both",
       });
     }
     setIsDialogOpen(true);
@@ -151,8 +137,7 @@ export default function Customers() {
     setIsSaving(true);
     
     try {
-      // Prepare data - only include fields that exist in database
-      const saveData: any = {
+      const saveData = {
         name: formData.name.trim(),
         phone: formData.phone.trim() || null,
         address: formData.address.trim() || null,
@@ -162,50 +147,35 @@ export default function Customers() {
         is_active: formData.is_active,
       };
 
-      console.log("Attempting to save:", saveData);
-
       if (editingCustomer) {
-        console.log("Updating customer:", editingCustomer.id);
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("customers")
           .update(saveData)
-          .eq("id", editingCustomer.id)
-          .select();
-
-        console.log("Update response:", { data, error });
+          .eq("id", editingCustomer.id);
 
         if (error) {
-          console.error("Update error details:", error);
           toast.error(`Update failed: ${error.message}`);
           setIsSaving(false);
           return;
         }
-        
         toast.success("Customer updated successfully");
       } else {
-        console.log("Inserting new customer");
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("customers")
-          .insert([saveData])
-          .select();
-
-        console.log("Insert response:", { data, error });
+          .insert([saveData]);
 
         if (error) {
-          console.error("Insert error details:", error);
           toast.error(`Insert failed: ${error.message}`);
           setIsSaving(false);
           return;
         }
-        
         toast.success("Customer added successfully");
       }
       
       await fetchCustomers();
       setIsDialogOpen(false);
     } catch (err: any) {
-      console.error("Catch block error:", err);
-      toast.error(`Unexpected error: ${err?.message || JSON.stringify(err)}`);
+      toast.error(`Unexpected error: ${err?.message}`);
     }
     
     setIsSaving(false);
@@ -243,26 +213,6 @@ export default function Customers() {
   const totalActive = customers.filter(c => c.is_active).length;
   const totalCow = customers.filter(c => c.milk_type === "cow").length;
   const totalBuffalo = customers.filter(c => c.milk_type === "buffalo").length;
-  const totalMorning = customers.filter(c => c.delivery_session === "morning" || c.delivery_session === "both").length;
-  const totalEvening = customers.filter(c => c.delivery_session === "evening" || c.delivery_session === "both").length;
-
-  const getSessionIcon = (session: string) => {
-    switch (session) {
-      case "morning": return <Sun className="w-4 h-4" />;
-      case "evening": return <Moon className="w-4 h-4" />;
-      case "both": return <Clock className="w-4 h-4" />;
-      default: return <Clock className="w-4 h-4" />;
-    }
-  };
-
-  const getSessionLabel = (session: string) => {
-    switch (session) {
-      case "morning": return "Morning";
-      case "evening": return "Evening";
-      case "both": return "Both";
-      default: return "Both";
-    }
-  };
 
   if (isLoading) {
     return (
@@ -343,26 +293,6 @@ export default function Customers() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Delivery Session</Label>
-                  <Select
-                    value={formData.delivery_session}
-                    onValueChange={(value: "morning" | "evening" | "both") => 
-                      setFormData({ ...formData, delivery_session: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="morning">Morning Only</SelectItem>
-                      <SelectItem value="evening">Evening Only</SelectItem>
-                      <SelectItem value="both">Both Sessions</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
                   <Label htmlFor="quantity">Daily Quantity (L)</Label>
                   <Input
                     id="quantity"
@@ -372,6 +302,8 @@ export default function Customers() {
                     onChange={(e) => setFormData({ ...formData, daily_quantity: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="rate">Rate per Liter (₹)</Label>
                   <Input
@@ -381,15 +313,15 @@ export default function Customers() {
                     onChange={(e) => setFormData({ ...formData, rate_per_liter: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Status</Label>
-                <div className="flex items-center gap-2 h-10">
-                  <Switch
-                    checked={formData.is_active}
-                    onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                  />
-                  <span className="text-sm">{formData.is_active ? "Active" : "Inactive"}</span>
+                <div className="grid gap-2">
+                  <Label>Status</Label>
+                  <div className="flex items-center gap-2 h-10">
+                    <Switch
+                      checked={formData.is_active}
+                      onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                    />
+                    <span className="text-sm">{formData.is_active ? "Active" : "Inactive"}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -404,7 +336,7 @@ export default function Customers() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card className="stat-card">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -434,38 +366,25 @@ export default function Customers() {
         <Card className="stat-card">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="stat-card-icon bg-warning/10">
-                <Sun className="w-5 h-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-2xl font-display font-bold">{totalMorning}</p>
-                <p className="text-sm text-muted-foreground">Morning</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="stat-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="stat-card-icon bg-info/10">
-                <Moon className="w-5 h-5 text-info" />
-              </div>
-              <div>
-                <p className="text-2xl font-display font-bold">{totalEvening}</p>
-                <p className="text-sm text-muted-foreground">Evening</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="stat-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
               <div className="stat-card-icon bg-cow/10">
                 <Milk className="w-5 h-5 text-cow" />
               </div>
               <div>
-                <p className="text-2xl font-display font-bold">{totalCow}/{totalBuffalo}</p>
-                <p className="text-sm text-muted-foreground">Cow/Buffalo</p>
+                <p className="text-2xl font-display font-bold">{totalCow}</p>
+                <p className="text-sm text-muted-foreground">Cow Milk</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="stat-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="stat-card-icon bg-buffalo/10">
+                <Milk className="w-5 h-5 text-buffalo" />
+              </div>
+              <div>
+                <p className="text-2xl font-display font-bold">{totalBuffalo}</p>
+                <p className="text-sm text-muted-foreground">Buffalo Milk</p>
               </div>
             </div>
           </CardContent>
@@ -483,18 +402,6 @@ export default function Customers() {
             className="pl-9"
           />
         </div>
-        <Select value={filterSession} onValueChange={setFilterSession}>
-          <SelectTrigger className="w-[180px]">
-            <Clock className="w-4 h-4 mr-2" />
-            <SelectValue placeholder="Filter by session" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Sessions</SelectItem>
-            <SelectItem value="morning">Morning Only</SelectItem>
-            <SelectItem value="evening">Evening Only</SelectItem>
-            <SelectItem value="both">Both Sessions</SelectItem>
-          </SelectContent>
-        </Select>
         <Select value={filterType} onValueChange={setFilterType}>
           <SelectTrigger className="w-[180px]">
             <Filter className="w-4 h-4 mr-2" />
@@ -508,106 +415,107 @@ export default function Customers() {
         </Select>
       </div>
 
-      {/* Customers Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredCustomers.map((customer) => (
-          <Card key={customer.id} className="stat-card group">
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center">
-                    <span className="text-lg font-semibold text-primary">
-                      {customer.name.charAt(0)}
-                    </span>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">{customer.name}</h3>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+      {/* Customers Table */}
+      {customers.length === 0 ? (
+        <Card className="p-12 text-center">
+          <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-semibold mb-2">No customers yet</h3>
+          <p className="text-muted-foreground mb-4">Add your first customer to get started</p>
+          <Button onClick={() => handleOpenDialog()}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Customer
+          </Button>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Contact</th>
+                  <th>Type</th>
+                  <th>Daily Qty</th>
+                  <th>Rate</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCustomers.map((customer) => (
+                  <tr key={customer.id}>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                          <span className="text-sm font-medium text-primary">
+                            {customer.name.charAt(0)}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="font-medium">{customer.name}</p>
+                          {customer.address && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {customer.address}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {customer.phone ? (
+                        <span className="flex items-center gap-1">
+                          <Phone className="w-3 h-3" />
+                          {customer.phone}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td>
                       <Badge 
-                        variant="secondary"
+                        variant="secondary" 
                         className={customer.milk_type === "cow" ? "milk-type-cow" : "milk-type-buffalo"}
                       >
                         {customer.milk_type}
                       </Badge>
-                      <Badge 
-                        variant="outline"
-                        className={customer.is_active ? "status-paid" : "status-unpaid"}
-                      >
-                        {customer.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                      <Badge variant="outline" className="flex items-center gap-1">
-                        {getSessionIcon(customer.delivery_session)}
-                        {getSessionLabel(customer.delivery_session)}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleOpenDialog(customer)}>
-                      <Edit className="w-4 h-4 mr-2" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleToggleStatus(customer.id, customer.is_active)}>
-                      <Switch className="w-4 h-4 mr-2" />
-                      {customer.is_active ? "Deactivate" : "Activate"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => handleDelete(customer.id)}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              <div className="space-y-2 text-sm">
-                {customer.phone && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="w-4 h-4" />
-                    <span>{customer.phone}</span>
-                  </div>
-                )}
-                {customer.address && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <MapPin className="w-4 h-4" />
-                    <span className="truncate">{customer.address}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Daily Quantity</p>
-                  <p className="font-semibold">{customer.daily_quantity} Liters</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Rate</p>
-                  <p className="font-semibold">₹{customer.rate_per_liter}/L</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {filteredCustomers.length === 0 && (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
-            <Users className="w-8 h-8 text-muted-foreground" />
+                    </td>
+                    <td className="font-medium">{customer.daily_quantity} L</td>
+                    <td>₹{customer.rate_per_liter}/L</td>
+                    <td>
+                      <Switch
+                        checked={customer.is_active}
+                        onCheckedChange={() => handleToggleStatus(customer.id, customer.is_active)}
+                      />
+                    </td>
+                    <td>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleOpenDialog(customer)}>
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => handleDelete(customer.id)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <h3 className="text-lg font-semibold mb-2">No customers found</h3>
-          <p className="text-muted-foreground">
-            {customers.length === 0 ? "Add your first customer to get started" : "Try adjusting your search or filter"}
-          </p>
-        </div>
+        </Card>
       )}
     </div>
   );

@@ -26,7 +26,6 @@ interface Customer {
   daily_quantity: number;
   rate_per_liter: number;
   is_active: boolean;
-  delivery_session: "morning" | "evening" | "both";
 }
 
 interface MilkEntry {
@@ -58,11 +57,18 @@ export default function MilkEntry() {
     const dateStr = format(selectedDate, "yyyy-MM-dd");
 
     // Fetch active customers
-    const { data: customersData } = await supabase
+    const { data: customersData, error: customersError } = await supabase
       .from("customers")
       .select("*")
       .eq("is_active", true)
       .order("name");
+
+    if (customersError) {
+      console.error("Failed to fetch customers:", customersError);
+      toast.error("Failed to fetch customers");
+      setIsLoading(false);
+      return;
+    }
 
     // Fetch existing entries for the date
     const { data: entriesData } = await supabase
@@ -70,21 +76,22 @@ export default function MilkEntry() {
       .select("*")
       .eq("date", dateStr);
 
-    const activeCustomers = customersData || [];
+    const activeCustomers: Customer[] = (customersData || []).map(c => ({
+      id: c.id,
+      name: c.name,
+      milk_type: c.milk_type,
+      daily_quantity: c.daily_quantity,
+      rate_per_liter: c.rate_per_liter,
+      is_active: c.is_active ?? true
+    }));
+    
     setCustomers(activeCustomers);
 
-    // Filter customers for morning session (morning + both)
-    const morningCustomers = activeCustomers.filter(c => 
-      c.delivery_session === "morning" || c.delivery_session === "both"
-    );
-
-    // Filter customers for evening session (evening + both)
-    const eveningCustomers = activeCustomers.filter(c => 
-      c.delivery_session === "evening" || c.delivery_session === "both"
-    );
-
+    // All active customers appear in both sessions (morning and evening)
+    // Each session gets half of daily quantity by default
+    
     // Create morning entries
-    const morning: MilkEntry[] = morningCustomers.map(c => {
+    const morning: MilkEntry[] = activeCustomers.map(c => {
       const existing = entriesData?.find(e => e.customer_id === c.id && e.session === "morning");
       return {
         id: existing?.id,
@@ -99,7 +106,7 @@ export default function MilkEntry() {
     });
 
     // Create evening entries
-    const evening: MilkEntry[] = eveningCustomers.map(c => {
+    const evening: MilkEntry[] = activeCustomers.map(c => {
       const existing = entriesData?.find(e => e.customer_id === c.id && e.session === "evening");
       return {
         id: existing?.id,
@@ -372,7 +379,7 @@ function MilkEntryTable({ entries, session, onExtraChange, onToggleDelivery }: M
     return (
       <Card className="p-8 text-center">
         <p className="text-muted-foreground">
-          No customers assigned to {session} session. Add customers with {session} delivery preference.
+          No active customers found. Add customers in the Customers page first.
         </p>
       </Card>
     );

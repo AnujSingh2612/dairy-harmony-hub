@@ -1,16 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Plus, 
   Search, 
   Filter,
-  Receipt,
   TrendingDown,
   Calendar,
   Upload,
   Edit,
   Trash2,
   MoreHorizontal,
-  PieChart
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,86 +46,154 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Expense {
-  id: number;
+  id: string;
   date: string;
-  category: string;
+  category_id: string | null;
   amount: number;
-  description: string;
-  receiptUrl?: string;
+  description: string | null;
+  receipt_url: string | null;
+  expense_categories: { id: string; name: string; icon: string | null } | null;
 }
 
 interface Category {
   id: string;
   name: string;
-  color: string;
-  budget: number;
+  icon: string | null;
 }
 
-const categories: Category[] = [
-  { id: "cow-food", name: "Cow Food", color: "hsl(35, 60%, 55%)", budget: 50000 },
-  { id: "medicine", name: "Medicine", color: "hsl(0, 72%, 51%)", budget: 15000 },
-  { id: "labor", name: "Labor", color: "hsl(200, 40%, 45%)", budget: 40000 },
-  { id: "maintenance", name: "Maintenance", color: "hsl(142, 52%, 36%)", budget: 20000 },
-  { id: "transport", name: "Transport", color: "hsl(38, 92%, 50%)", budget: 25000 },
-  { id: "utilities", name: "Utilities", color: "hsl(280, 50%, 50%)", budget: 10000 },
-];
-
-const mockExpenses: Expense[] = [
-  { id: 1, date: "2024-12-10", category: "Cow Food", amount: 12500, description: "Monthly cattle feed purchase" },
-  { id: 2, date: "2024-12-09", category: "Medicine", amount: 3500, description: "Veterinary checkup and vaccines" },
-  { id: 3, date: "2024-12-08", category: "Labor", amount: 25000, description: "Staff salaries" },
-  { id: 4, date: "2024-12-07", category: "Maintenance", amount: 8000, description: "Milking machine repair" },
-  { id: 5, date: "2024-12-06", category: "Transport", amount: 5500, description: "Fuel for delivery vehicles" },
-  { id: 6, date: "2024-12-05", category: "Utilities", amount: 4200, description: "Electricity bill" },
-  { id: 7, date: "2024-12-04", category: "Cow Food", amount: 8000, description: "Hay and fodder" },
-  { id: 8, date: "2024-12-03", category: "Medicine", amount: 2800, description: "Antibiotics and supplements" },
-];
+const categoryColors: Record<string, string> = {
+  "Cow Food": "hsl(35, 60%, 55%)",
+  "Medicine": "hsl(0, 72%, 51%)",
+  "Labor": "hsl(200, 40%, 45%)",
+  "Maintenance": "hsl(142, 52%, 36%)",
+  "Transport": "hsl(38, 92%, 50%)",
+  "Utilities": "hsl(280, 50%, 50%)",
+  "Other": "hsl(220, 10%, 50%)",
+};
 
 export default function Expenses() {
-  const [expenses, setExpenses] = useState<Expense[]>(mockExpenses);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
-    category: "",
+    category_id: "",
     amount: 0,
     description: "",
   });
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    
+    // Fetch categories
+    const { data: categoriesData } = await supabase
+      .from("expense_categories")
+      .select("*")
+      .order("name");
+    
+    setCategories(categoriesData || []);
+
+    // Fetch expenses
+    const { data: expensesData, error } = await supabase
+      .from("expenses")
+      .select("*, expense_categories(id, name, icon)")
+      .order("date", { ascending: false });
+
+    if (error) {
+      toast.error("Failed to fetch expenses");
+      console.error(error);
+    } else {
+      setExpenses(expensesData as Expense[] || []);
+    }
+    setIsLoading(false);
+  };
+
   const filteredExpenses = expenses.filter((expense) => {
-    const matchesSearch = expense.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = filterCategory === "all" || expense.category === filterCategory;
+    const matchesSearch = expense.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+    const matchesCategory = filterCategory === "all" || expense.expense_categories?.name === filterCategory;
     return matchesSearch && matchesCategory;
   });
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
   
   const categoryTotals = categories.map(cat => ({
     ...cat,
-    total: expenses.filter(e => e.category === cat.name).reduce((sum, e) => sum + e.amount, 0),
+    color: categoryColors[cat.name] || categoryColors["Other"],
+    total: expenses.filter(e => e.category_id === cat.id).reduce((sum, e) => sum + Number(e.amount), 0),
   }));
 
-  const handleSave = () => {
-    const newExpense: Expense = {
-      id: Math.max(...expenses.map(e => e.id)) + 1,
-      ...formData,
-    };
-    setExpenses([newExpense, ...expenses]);
-    setIsDialogOpen(false);
-    setFormData({
-      date: new Date().toISOString().split('T')[0],
-      category: "",
-      amount: 0,
-      description: "",
-    });
+  const handleSave = async () => {
+    if (!formData.category_id) {
+      toast.error("Please select a category");
+      return;
+    }
+    if (formData.amount <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    setIsSaving(true);
+
+    const { error } = await supabase
+      .from("expenses")
+      .insert([{
+        date: formData.date,
+        category_id: formData.category_id,
+        amount: formData.amount,
+        description: formData.description || null,
+      }]);
+
+    if (error) {
+      toast.error("Failed to add expense");
+      console.error(error);
+    } else {
+      toast.success("Expense added successfully");
+      setIsDialogOpen(false);
+      setFormData({
+        date: new Date().toISOString().split('T')[0],
+        category_id: "",
+        amount: 0,
+        description: "",
+      });
+      fetchData();
+    }
+    setIsSaving(false);
   };
 
-  const handleDelete = (id: number) => {
-    setExpenses(expenses.filter(e => e.id !== id));
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase
+      .from("expenses")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Failed to delete expense");
+      console.error(error);
+    } else {
+      toast.success("Expense deleted");
+      fetchData();
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -161,15 +228,15 @@ export default function Expenses() {
                 <div className="grid gap-2">
                   <Label>Category</Label>
                   <Select
-                    value={formData.category}
-                    onValueChange={(value) => setFormData({ ...formData, category: value })}
+                    value={formData.category_id}
+                    onValueChange={(value) => setFormData({ ...formData, category_id: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.name}>
+                        <SelectItem key={cat.id} value={cat.id}>
                           {cat.name}
                         </SelectItem>
                       ))}
@@ -194,17 +261,12 @@ export default function Expenses() {
                   placeholder="Describe the expense"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label>Receipt (Optional)</Label>
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                  <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">Click to upload or drag and drop</p>
-                </div>
-              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave}>Add Expense</Button>
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? "Adding..." : "Add Expense"}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -216,14 +278,14 @@ export default function Expenses() {
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-display flex items-center gap-2">
               <TrendingDown className="w-5 h-5 text-destructive" />
-              Monthly Total
+              Total Expenses
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-display font-bold text-destructive">
               ₹{totalExpenses.toLocaleString()}
             </p>
-            <p className="text-sm text-muted-foreground mt-1">December 2024</p>
+            <p className="text-sm text-muted-foreground mt-1">All time</p>
           </CardContent>
         </Card>
 
@@ -232,49 +294,53 @@ export default function Expenses() {
             <CardTitle className="text-lg font-display">Category Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-6">
-              <div className="w-[180px] h-[180px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPC>
-                    <Pie
-                      data={categoryTotals.filter(c => c.total > 0)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={45}
-                      outerRadius={75}
-                      paddingAngle={3}
-                      dataKey="total"
-                    >
-                      {categoryTotals.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: "hsl(var(--card))", 
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px"
-                      }}
-                      formatter={(value: number) => [`₹${value.toLocaleString()}`, ""]}
-                    />
-                  </RechartsPC>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-1 grid grid-cols-2 gap-3">
-                {categoryTotals.filter(c => c.total > 0).map((cat) => (
-                  <div key={cat.id} className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: cat.color }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{cat.name}</p>
-                      <p className="text-xs text-muted-foreground">₹{cat.total.toLocaleString()}</p>
+            {categoryTotals.some(c => c.total > 0) ? (
+              <div className="flex items-center gap-6">
+                <div className="w-[180px] h-[180px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPC>
+                      <Pie
+                        data={categoryTotals.filter(c => c.total > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={75}
+                        paddingAngle={3}
+                        dataKey="total"
+                      >
+                        {categoryTotals.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: "hsl(var(--card))", 
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px"
+                        }}
+                        formatter={(value: number) => [`₹${value.toLocaleString()}`, ""]}
+                      />
+                    </RechartsPC>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex-1 grid grid-cols-2 gap-3">
+                  {categoryTotals.filter(c => c.total > 0).map((cat) => (
+                    <div key={cat.id} className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: cat.color }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{cat.name}</p>
+                        <p className="text-xs text-muted-foreground">₹{cat.total.toLocaleString()}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <p className="text-muted-foreground text-center py-8">No expenses recorded yet</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -302,86 +368,80 @@ export default function Expenses() {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline">
-          <Calendar className="w-4 h-4 mr-2" />
-          Date Range
-        </Button>
       </div>
 
       {/* Expenses Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Category</th>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Receipt</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredExpenses.map((expense) => {
-                const category = categories.find(c => c.name === expense.category);
-                return (
-                  <tr key={expense.id}>
-                    <td className="font-medium">{expense.date}</td>
-                    <td>
-                      <Badge 
-                        variant="secondary"
-                        style={{ 
-                          backgroundColor: `${category?.color}20`,
-                          color: category?.color,
-                          borderColor: `${category?.color}40`,
-                        }}
-                        className="border"
-                      >
-                        {expense.category}
-                      </Badge>
-                    </td>
-                    <td className="max-w-xs truncate">{expense.description}</td>
-                    <td className="font-semibold text-destructive">₹{expense.amount.toLocaleString()}</td>
-                    <td>
-                      {expense.receiptUrl ? (
-                        <Button variant="ghost" size="sm">
-                          <Receipt className="w-4 h-4 mr-1" />
-                          View
-                        </Button>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            onClick={() => handleDelete(expense.id)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      {expenses.length === 0 ? (
+        <Card className="p-12 text-center">
+          <TrendingDown className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-semibold mb-2">No expenses yet</h3>
+          <p className="text-muted-foreground mb-4">Start tracking your farm expenses</p>
+          <Button onClick={() => setIsDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add First Expense
+          </Button>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th>Amount</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredExpenses.map((expense) => {
+                  const categoryName = expense.expense_categories?.name || "Uncategorized";
+                  const color = categoryColors[categoryName] || categoryColors["Other"];
+                  return (
+                    <tr key={expense.id}>
+                      <td className="font-medium">{expense.date}</td>
+                      <td>
+                        <Badge 
+                          variant="secondary"
+                          style={{ 
+                            backgroundColor: `${color}20`,
+                            color: color,
+                            borderColor: `${color}40`,
+                          }}
+                          className="border"
+                        >
+                          {categoryName}
+                        </Badge>
+                      </td>
+                      <td className="max-w-xs truncate">{expense.description || "-"}</td>
+                      <td className="font-semibold text-destructive">₹{Number(expense.amount).toLocaleString()}</td>
+                      <td>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem 
+                              onClick={() => handleDelete(expense.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
