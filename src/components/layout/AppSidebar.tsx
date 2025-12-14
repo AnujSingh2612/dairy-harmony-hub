@@ -25,6 +25,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const mainNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -40,9 +41,29 @@ const settingsNavItems = [
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
+const navTranslations: Record<string, { en: string; hi: string }> = {
+  "Dashboard": { en: "Dashboard", hi: "डैशबोर्ड" },
+  "Customers": { en: "Customers", hi: "ग्राहक" },
+  "Milk Entry": { en: "Milk Entry", hi: "दूध प्रविष्टि" },
+  "Bills": { en: "Bills", hi: "बिल" },
+  "Payments": { en: "Payments", hi: "भुगतान" },
+  "Expenses": { en: "Expenses", hi: "खर्चे" },
+  "Reports": { en: "Reports", hi: "रिपोर्ट" },
+  "Settings": { en: "Settings", hi: "सेटिंग्स" },
+  "Main Menu": { en: "Main Menu", hi: "मुख्य मेनू" },
+  "System": { en: "System", hi: "सिस्टम" },
+};
+
+function getLabel(key: string, language: "en" | "hi"): string {
+  const entry = navTranslations[key];
+  if (!entry) return key;
+  return entry[language];
+}
+
 export function AppSidebar() {
   const location = useLocation();
   const { state } = useSidebar();
+  const { language } = useTheme();
   const isCollapsed = state === "collapsed";
 
   return (
@@ -68,17 +89,18 @@ export function AppSidebar() {
       <SidebarContent className="px-2 py-4">
         <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-foreground/50 text-xs uppercase tracking-wider mb-2 px-3">
-            {!isCollapsed && "Main Menu"}
+            {!isCollapsed && getLabel("Main Menu", language)}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {mainNavItems.map((item) => {
                 const isActive = location.pathname === item.url;
+                const label = getLabel(item.title, language);
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
                       asChild
-                      tooltip={item.title}
+                      tooltip={label}
                       className={cn(
                         "h-10 transition-all duration-200",
                         isActive 
@@ -88,7 +110,7 @@ export function AppSidebar() {
                     >
                       <NavLink to={item.url}>
                         <item.icon className="w-5 h-5" />
-                        <span className="font-medium">{item.title}</span>
+                        <span className="font-medium">{label}</span>
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -100,17 +122,18 @@ export function AppSidebar() {
 
         <SidebarGroup className="mt-auto">
           <SidebarGroupLabel className="text-sidebar-foreground/50 text-xs uppercase tracking-wider mb-2 px-3">
-            {!isCollapsed && "System"}
+            {!isCollapsed && getLabel("System", language)}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {settingsNavItems.map((item) => {
                 const isActive = location.pathname === item.url;
+                const label = getLabel(item.title, language);
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
                       asChild
-                      tooltip={item.title}
+                      tooltip={label}
                       className={cn(
                         "h-10 transition-all duration-200",
                         isActive 
@@ -120,7 +143,7 @@ export function AppSidebar() {
                     >
                       <NavLink to={item.url}>
                         <item.icon className="w-5 h-5" />
-                        <span className="font-medium">{item.title}</span>
+                        <span className="font-medium">{label}</span>
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
