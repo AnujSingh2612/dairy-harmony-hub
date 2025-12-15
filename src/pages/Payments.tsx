@@ -6,12 +6,15 @@ import {
   IndianRupee,
   Smartphone,
   Banknote,
-  Loader2
+  Loader2,
+  Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -19,8 +22,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 interface Payment {
   id: string;
@@ -34,6 +47,15 @@ interface Payment {
   bills: { bill_number: string } | null;
 }
 
+interface Bill {
+  id: string;
+  bill_number: string;
+  customer_id: string;
+  final_amount: number;
+  status: string;
+  customers: { name: string } | null;
+}
+
 const paymentModeIcons = {
   cash: Banknote,
   online: CreditCard,
@@ -42,12 +64,22 @@ const paymentModeIcons = {
 
 export default function Payments() {
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [unpaidBills, setUnpaidBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterMode, setFilterMode] = useState<string>("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Form state
+  const [selectedBill, setSelectedBill] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"cash" | "online" | "upi">("cash");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchPayments();
+    fetchUnpaidBills();
   }, []);
 
   const fetchPayments = async () => {
@@ -64,6 +96,74 @@ export default function Payments() {
       setPayments(data as Payment[] || []);
     }
     setIsLoading(false);
+  };
+
+  const fetchUnpaidBills = async () => {
+    const { data, error } = await supabase
+      .from("bills")
+      .select("*, customers(name)")
+      .eq("status", "unpaid")
+      .order("bill_number", { ascending: false });
+
+    if (error) {
+      console.error("Failed to fetch unpaid bills:", error);
+    } else {
+      setUnpaidBills(data as Bill[] || []);
+    }
+  };
+
+  const handleAddPayment = async () => {
+    if (!selectedBill || !paymentAmount) {
+      toast.error("Please select a bill and enter amount");
+      return;
+    }
+
+    const bill = unpaidBills.find((b) => b.id === selectedBill);
+    if (!bill) return;
+
+    setSubmitting(true);
+    try {
+      // Create payment
+      const { error: paymentError } = await supabase.from("payments").insert({
+        bill_id: selectedBill,
+        customer_id: bill.customer_id,
+        amount: parseFloat(paymentAmount),
+        payment_mode: paymentMode,
+        notes: paymentNotes || null,
+      });
+
+      if (paymentError) throw paymentError;
+
+      // Update bill status to paid
+      const { error: billError } = await supabase
+        .from("bills")
+        .update({ 
+          status: "paid", 
+          payment_mode: paymentMode,
+          payment_date: format(new Date(), "yyyy-MM-dd")
+        })
+        .eq("id", selectedBill);
+
+      if (billError) throw billError;
+
+      toast.success("Payment recorded successfully");
+      setDialogOpen(false);
+      resetForm();
+      fetchPayments();
+      fetchUnpaidBills();
+    } catch (error) {
+      console.error("Error adding payment:", error);
+      toast.error("Failed to record payment");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resetForm = () => {
+    setSelectedBill("");
+    setPaymentAmount("");
+    setPaymentMode("cash");
+    setPaymentNotes("");
   };
 
   const filteredPayments = payments.filter((payment) => {
@@ -94,6 +194,94 @@ export default function Payments() {
           <h1 className="text-2xl font-display font-bold text-foreground">Payments</h1>
           <p className="text-muted-foreground">Track all payment transactions</p>
         </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Payment
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Record New Payment</DialogTitle>
+              <DialogDescription>
+                Select an unpaid bill and record the payment details.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Select Bill</Label>
+                <Select value={selectedBill} onValueChange={(value) => {
+                  setSelectedBill(value);
+                  const bill = unpaidBills.find(b => b.id === value);
+                  if (bill) {
+                    setPaymentAmount(bill.final_amount.toString());
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select unpaid bill" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unpaidBills.length === 0 ? (
+                      <SelectItem value="none" disabled>
+                        No unpaid bills
+                      </SelectItem>
+                    ) : (
+                      unpaidBills.map((bill) => (
+                        <SelectItem key={bill.id} value={bill.id}>
+                          {bill.bill_number} - {bill.customers?.name} - ₹{bill.final_amount}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Amount (₹)</Label>
+                <Input
+                  type="number"
+                  placeholder="Enter amount"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Payment Mode</Label>
+                <Select
+                  value={paymentMode}
+                  onValueChange={(value: "cash" | "online" | "upi") =>
+                    setPaymentMode(value)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="upi">UPI</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Notes (Optional)</Label>
+                <Textarea
+                  placeholder="Add any notes..."
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddPayment} disabled={submitting || !selectedBill}>
+                {submitting ? "Recording..." : "Record Payment"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Stats Cards */}
@@ -182,7 +370,7 @@ export default function Payments() {
         <Card className="p-12 text-center">
           <CreditCard className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold mb-2">No payments yet</h3>
-          <p className="text-muted-foreground">Payments will appear here when bills are marked as paid</p>
+          <p className="text-muted-foreground mb-4">Click "Add Payment" to record your first payment</p>
         </Card>
       ) : (
         <Card className="overflow-hidden">
